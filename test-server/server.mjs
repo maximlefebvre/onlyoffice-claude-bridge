@@ -20,7 +20,7 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
   .split(',').map(s => s.trim()).filter(Boolean);
 
 // Jeton persistant : généré une fois, à coller une fois dans le plugin.
-const dir = join(homedir(), '.config', 'kdrive-claude');
+const dir = join(homedir(), '.config', 'onlyoffice-claude-bridge');
 const tokenFile = join(dir, 'token');
 mkdirSync(dir, { recursive: true, mode: 0o700 });
 if (!existsSync(tokenFile)) writeFileSync(tokenFile, randomBytes(24).toString('base64url'), { mode: 0o600 });

@@ -1,9 +1,11 @@
-# kDrive × Claude
+# OnlyOffice Claude Bridge
 
-Faire éditer les documents OnlyOffice ouverts dans kDrive par Claude (app Claude ou Claude Code), via un plugin OnlyOffice et un serveur MCP local.
+Permettre à Claude (app Claude ou Claude Code) d'éditer le document OnlyOffice ouvert, via un plugin OnlyOffice et un serveur MCP local. Conçu pour toute instance OnlyOffice qui accepte un store de plugins personnalisé (kDrive, Nextcloud, OnlyOffice Docs, Desktop Editors…).
+
+> Projet personnel non officiel, sans lien avec Anthropic ni avec Ascensio System SIA (ONLYOFFICE).
 
 ```
-Claude ──MCP──▶ serveur local (127.0.0.1) ──WebSocket──▶ plugin OnlyOffice (dans kDrive)
+Claude ──MCP──▶ serveur local (127.0.0.1) ──WebSocket──▶ plugin OnlyOffice
 ```
 
 ## Contenu
@@ -13,10 +15,10 @@ Claude ──MCP──▶ serveur local (127.0.0.1) ──WebSocket──▶ plu
   - `docs/sdkjs-plugins/content/claude-bridge/` : le plugin.
 - `test-server/` : serveur WebSocket de test (étape 1, sans MCP).
 
-## Étape 1 : tester dans kDrive
+## Étape 1 : tester dans un éditeur OnlyOffice (ex. kDrive)
 
-1. `cd test-server && npm install && node server.mjs`. Le serveur affiche le jeton (enregistré dans `~/.config/kdrive-claude/token`).
-2. Publier `docs/` sur GitHub Pages, puis ouvrir l'éditeur kDrive → Plugins → Gestionnaire de plugins → `</>` (mode développeur) → coller `https://<compte>.github.io/<repo>/store/index.html`.
+1. `cd test-server && npm install && node server.mjs`. Le serveur affiche le jeton (enregistré dans `~/.config/onlyoffice-claude-bridge/token`).
+2. Ouvrir l'éditeur → Plugins → Gestionnaire de plugins → `</>` (mode développeur) → coller `https://maximlefebvre.github.io/onlyoffice-claude-bridge/store/index.html`.
 3. Installer « Claude Bridge », ouvrir le panneau, coller le jeton, cliquer sur « Connecter ».
 4. Dans le terminal du serveur, taper `ping`, `info` ou `sel` (après avoir sélectionné du texte).
 

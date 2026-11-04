@@ -1,5 +1,5 @@
 {
-  "name": "kdrive-claude-test-server",
+  "name": "claude-bridge-test-server",
   "private": true,
   "type": "module",
   "scripts": { "start": "node server.mjs" },
