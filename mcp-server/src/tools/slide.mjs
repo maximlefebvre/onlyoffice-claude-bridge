@@ -38,12 +38,16 @@ export const slideTools = [
           var o = { index: k };
           try { o.name = sh.GetName(); } catch (e) {}
           try { var ph = sh.GetPlaceholder(); if (ph) o.placeholder = ph.GetType(); } catch (e) {}
-          try { var dc = sh.GetDocContent(); if (dc) o.text = dc.GetText().replace(/[\r\n]+$/, ''); } catch (e) {}
+          try { var dc = sh.GetDocContent(); if (dc) o.text = dc.GetText().replace(/^[\r\n]+|[\r\n]+$/g, ''); } catch (e) {}
           shapes.push(o);
         });
+        var others = [];
+        [['image', 'GetAllImages'], ['chart', 'GetAllCharts'], ['table', 'GetAllTables']].forEach(function (k) {
+          try { (slide[k[1]]() || []).forEach(function (d, j) { others.push({ type: k[0], index: j }); }); } catch (e) {}
+        });
         var notes = null;
-        try { notes = slide.GetNotesPage().GetBodyShapeText(); } catch (e) {}
-        slides.push({ index: i, shapes: shapes, notes: notes || undefined });
+        try { notes = slide.GetNotesPage().GetBodyShapeText().replace(/^[\r\n]+|[\r\n]+$/g, ''); } catch (e) {}
+        slides.push({ index: i, shapes: shapes, other: others.length ? others : undefined, notes: notes || undefined });
       }
       return { count: n, current: current, slides: slides };
     }, {}, false),
@@ -79,6 +83,7 @@ export const slideTools = [
           if (bold) p.SetBold(true);
           dc.Push(p);
         });
+        while (dc.GetElementsCount() > lines.length) dc.RemoveElement(0); // RemoveAllElements keeps one empty paragraph
         slide.AddObject(sh);
       }
       if (s.title) box([s.title], 0.06, 0.06, 0.88, 0.18, s.title_size || 36, true);
@@ -141,6 +146,7 @@ export const slideTools = [
         if (s.line_spacing) p.SetSpacingLine(Math.round(s.line_spacing * 240), 'auto');
         dc.Push(p);
       });
+      while (dc.GetElementsCount() > s.lines.length) dc.RemoveElement(0); // RemoveAllElements keeps one empty paragraph
       return { updated: { slide: s.slide, shape: s.shape } };
     }, { ...a, rgb: a.color ? hexToRgb(a.color) : undefined }),
   },
@@ -179,6 +185,7 @@ export const slideTools = [
         if (s.line_spacing) p.SetSpacingLine(Math.round(s.line_spacing * 240), 'auto');
         dc.Push(p);
       });
+      while (dc.GetElementsCount() > s.lines.length) dc.RemoveElement(0); // RemoveAllElements keeps one empty paragraph
       slide.AddObject(sh);
       return { added: { slide: s.slide, shape: (slide.GetAllShapes() || []).length - 1 } };
     }, {
@@ -278,7 +285,9 @@ export const slideTools = [
       if (body && body.GetDocContent()) {
         var dc = body.GetDocContent();
         dc.RemoveAllElements();
-        s.text.split('\n').forEach(function (t) { var p = Api.CreateParagraph(); p.AddText(t); dc.Push(p); });
+        var parts = s.text.split('\n');
+        parts.forEach(function (t) { var p = Api.CreateParagraph(); p.AddText(t); dc.Push(p); });
+        while (dc.GetElementsCount() > parts.length) dc.RemoveElement(0);
       } else {
         page.AddBodyShapeText(s.text);
       }

@@ -535,6 +535,7 @@ export const wordTools = [
           if (s.align) p.SetJc(s.align);
           dc.Push(p);
         });
+        while (dc.GetElementsCount() > lines.length) dc.RemoveElement(0); // RemoveAllElements keeps one empty paragraph
       });
       return { sections: sections.length, which: s.which };
     }, a),
