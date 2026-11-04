@@ -289,7 +289,10 @@ export const wordTools = [
     run: (b, c, a) => b.run(c, function () {
       var s = Asc.scope, doc = Api.GetDocument();
       var nRows = s.rows.length, nCols = Math.max.apply(null, s.rows.map(function (r) { return r.length; }));
-      var t = Api.CreateTable(nCols, nRows);
+      // OnlyOffice 9.4 swapped the arguments from (cols, rows) to (rows, cols):
+      // create the table, then retry the other way if the shape is wrong.
+      var t = Api.CreateTable(nRows, nCols);
+      if (t.GetRowsCount() !== nRows) t = Api.CreateTable(nCols, nRows);
       try { var st = doc.GetStyle('Bordered'); if (st) t.SetStyle(st); } catch (e) {}
       try { t.SetWidth('percent', 100); } catch (e) {}
       for (var r = 0; r < nRows; r++) {
