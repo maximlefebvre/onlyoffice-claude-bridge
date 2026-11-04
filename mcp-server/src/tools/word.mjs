@@ -40,7 +40,7 @@ export const wordTools = [
           for (var r = 0; r < el.GetRowsCount(); r++) {
             var row = el.GetRow(r), cells = [];
             for (var k = 0; k < row.GetCellsCount(); k++) {
-              cells.push(row.GetCell(k).GetContent().GetText().replace(/[\r\n]+$/, ''));
+              cells.push(row.GetCell(k).GetContent().GetText().replace(/[\t\r\n]+$/, ''));
             }
             rows.push(cells);
           }
@@ -289,7 +289,8 @@ export const wordTools = [
     run: (b, c, a) => b.run(c, function () {
       var s = Asc.scope, doc = Api.GetDocument();
       var nRows = s.rows.length, nCols = Math.max.apply(null, s.rows.map(function (r) { return r.length; }));
-      // OnlyOffice 9.4 swapped the arguments from (cols, rows) to (rows, cols):
+      // OnlyOffice 9.4 swapped the arguments from (cols, rows) to (rows, cols)
+      // (kDrive runs 10.x). Older editors get the old order as a fallback:
       // create the table, then retry the other way if the shape is wrong.
       var t = Api.CreateTable(nRows, nCols);
       if (t.GetRowsCount() !== nRows) t = Api.CreateTable(nCols, nRows);
