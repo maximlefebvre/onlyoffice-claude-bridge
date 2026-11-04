@@ -110,13 +110,15 @@ function extract(source, editor) {
   return { entries, typedefs, inherits };
 }
 
+// inherits is per editor: the same class name can have a different parent in
+// each editor (e.g. ApiTable extends ApiTablePr in word, ApiDrawing in slide).
 const out = { source: `ONLYOFFICE/sdkjs@${TAG}`, generated: new Date().toISOString(), inherits: {}, methods: [], types: [] };
 for (const editor of Object.keys(EDITORS)) {
   const url = `https://raw.githubusercontent.com/ONLYOFFICE/sdkjs/${TAG}/${editor}/apiBuilder.js`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   const { entries, typedefs, inherits } = extract(await res.text(), editor);
-  Object.assign(out.inherits, inherits);
+  out.inherits[editor] = inherits;
   out.methods.push(...entries);
   out.types.push(...typedefs);
   console.error(`${editor}: ${entries.length} methods, ${typedefs.length} types`);

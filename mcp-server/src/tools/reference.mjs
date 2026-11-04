@@ -48,11 +48,15 @@ function format(m, detailed) {
   return o;
 }
 
-// Classes whose methods are available on `cls` (itself + ancestors).
-function lineage(cls) {
-  const out = [cls];
-  for (let c = cls; ref.inherits[c]; c = ref.inherits[c]) out.push(ref.inherits[c]);
-  return out;
+// Classes whose methods are available on `cls` (itself + ancestors) in one
+// editor, or in any editor when none is given.
+function lineage(cls, editor) {
+  const maps = editor ? [ref.inherits[editor] || {}] : Object.values(ref.inherits);
+  const out = new Set([cls]);
+  for (const map of maps) {
+    for (let c = cls, guard = 0; map[c] && guard < 20; c = map[c], guard++) out.add(map[c]);
+  }
+  return [...out];
 }
 
 export const referenceTools = [
@@ -91,14 +95,14 @@ export const referenceTools = [
       if (a.method) {
         const [c, m] = a.method.includes('.') ? a.method.split('.') : [null, a.method];
         const found = r.methods.filter((x) => x.method.toLowerCase() === m.toLowerCase()
-          && (!c || lineage(c).some((k) => k.toLowerCase() === x.class.toLowerCase()) || x.class.toLowerCase() === c.toLowerCase())
+          && (!c || lineage(c, a.editor).some((k) => k.toLowerCase() === x.class.toLowerCase()) || x.class.toLowerCase() === c.toLowerCase())
           && inEditor(x));
         if (!found.length) throw new Error(`No method "${a.method}" found. Try query or class.`);
         return found.slice(0, 10).map((x) => format(x, true));
       }
 
       if (a.class) {
-        const chain = lineage(a.class);
+        const chain = lineage(a.class, a.editor);
         const own = r.methods.filter((x) => chain.includes(x.class) && inEditor(x));
         if (!own.length) {
           const classes = [...new Set(r.methods.filter(inEditor).map((x) => x.class))].sort();
@@ -107,7 +111,7 @@ export const referenceTools = [
         return {
           class: a.class,
           inherits: chain.slice(1),
-          methods: own.map((x) => ({ signature: signature(x), from: x.class !== a.class ? x.class : undefined, description: x.description.slice(0, 120) })),
+          methods: own.map((x) => ({ signature: signature(x), from: x.class !== a.class ? x.class : undefined, editors: a.editor ? undefined : x.editors, description: x.description.slice(0, 120) })),
         };
       }
 

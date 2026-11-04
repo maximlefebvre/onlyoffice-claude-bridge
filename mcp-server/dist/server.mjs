@@ -42412,10 +42412,13 @@ function format(m, detailed) {
   if (m.deprecated) o.deprecated = m.deprecated;
   return o;
 }
-function lineage(cls) {
-  const out = [cls];
-  for (let c = cls; ref.inherits[c]; c = ref.inherits[c]) out.push(ref.inherits[c]);
-  return out;
+function lineage(cls, editor) {
+  const maps = editor ? [ref.inherits[editor] || {}] : Object.values(ref.inherits);
+  const out = /* @__PURE__ */ new Set([cls]);
+  for (const map2 of maps) {
+    for (let c = cls, guard = 0; map2[c] && guard < 20; c = map2[c], guard++) out.add(map2[c]);
+  }
+  return [...out];
 }
 var referenceTools = [
   {
@@ -42450,12 +42453,12 @@ var referenceTools = [
       }
       if (a.method) {
         const [c, m] = a.method.includes(".") ? a.method.split(".") : [null, a.method];
-        const found = r.methods.filter((x) => x.method.toLowerCase() === m.toLowerCase() && (!c || lineage(c).some((k) => k.toLowerCase() === x.class.toLowerCase()) || x.class.toLowerCase() === c.toLowerCase()) && inEditor(x));
+        const found = r.methods.filter((x) => x.method.toLowerCase() === m.toLowerCase() && (!c || lineage(c, a.editor).some((k) => k.toLowerCase() === x.class.toLowerCase()) || x.class.toLowerCase() === c.toLowerCase()) && inEditor(x));
         if (!found.length) throw new Error(`No method "${a.method}" found. Try query or class.`);
         return found.slice(0, 10).map((x) => format(x, true));
       }
       if (a.class) {
-        const chain = lineage(a.class);
+        const chain = lineage(a.class, a.editor);
         const own2 = r.methods.filter((x) => chain.includes(x.class) && inEditor(x));
         if (!own2.length) {
           const classes = [...new Set(r.methods.filter(inEditor).map((x) => x.class))].sort();
@@ -42464,7 +42467,7 @@ var referenceTools = [
         return {
           class: a.class,
           inherits: chain.slice(1),
-          methods: own2.map((x) => ({ signature: signature(x), from: x.class !== a.class ? x.class : void 0, description: x.description.slice(0, 120) }))
+          methods: own2.map((x) => ({ signature: signature(x), from: x.class !== a.class ? x.class : void 0, editors: a.editor ? void 0 : x.editors, description: x.description.slice(0, 120) }))
         };
       }
       if (!a.query) throw new Error("Pass query, class, method or type.");
