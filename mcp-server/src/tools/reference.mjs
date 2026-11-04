@@ -1,13 +1,23 @@
 // api_reference: searchable OnlyOffice Office API documentation, generated from
 // the sdkjs sources by scripts/build-api-reference.mjs.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+// src/tools/reference.mjs -> ../../data, bundled dist/server.mjs -> ../data
+function dataFile() {
+  for (const rel of ['../../data/api-reference.json', '../data/api-reference.json']) {
+    const f = fileURLToPath(new URL(rel, import.meta.url));
+    if (existsSync(f)) return f;
+  }
+  throw new Error('api-reference.json not found');
+}
 import { z } from 'zod';
 
 let ref = null;
 function load() {
   if (!ref) {
-    ref = JSON.parse(readFileSync(new URL('../../data/api-reference.json', import.meta.url), 'utf8'));
+    ref = JSON.parse(readFileSync(dataFile(), 'utf8'));
     for (const m of ref.methods) {
       m._name = splitWords(m.method).join(' ');
       m._class = splitWords(m.class.replace(/^Api/, '')).join(' ');

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Allow Claude Bridge</title>
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+  <p class="crumbs"><a href="./">OnlyOffice Claude Bridge</a> › <a href="install.html">Install guide</a></p>
+  <h1>Allow this site to reach Claude</h1>
+  <p class="lead">
+    The Claude Bridge plugin talks to a small server running on your computer (<b>127.0.0.1</b>).
+    Recent browsers block websites from reaching your computer unless you allow it, and they cannot ask inside the editor.
+    Allow it once here: the permission then applies to the plugin wherever you use it, and to no other website.
+  </p>
+
+  <div class="card">
+    <h2>1. Make sure Claude is running</h2>
+    <p>Start a Claude Code session with the <b>onlyoffice-bridge</b> plugin installed (or any client that runs the MCP server). The server starts with the session.</p>
+  </div>
+
+  <div class="card">
+    <h2>2. Test the connection</h2>
+    <p>Click the button. If your browser asks whether this site may <b>access apps and services on this device</b>, tick <b>Remember this decision</b> and choose <b>Allow</b>.</p>
+    <p><button id="test" type="button">Test connection</button></p>
+    <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+  </div>
+
+  <div class="card">
+    <h2>3. Go back to your document</h2>
+    <p>Open (or reopen) the <b>Claude Bridge</b> panel in OnlyOffice. It connects by itself within a few seconds.</p>
+  </div>
+
+  <p class="note">
+    The permission is stored for <b>maximlefebvre.github.io</b> only. Other websites stay blocked.
+    To remove it: click the site icon left of the address bar, or in Firefox open <b>Settings → Privacy &amp; Security → Permissions</b>.
+    If you previously added <code class="inline">127.0.0.1</code> to <code class="inline">network.lna.skip-domains</code> in <code class="inline">about:config</code>, you can now remove it.
+  </p>
+</main>
+<script>
+(function () {
+  var PORT = parseInt(new URLSearchParams(location.search).get('port'), 10) || 47615;
+  var btn = document.getElementById('test');
+  var box = document.getElementById('status');
+
+  function show(kind, html) {
+    box.hidden = false;
+    box.className = 'status ' + kind;
+    box.innerHTML = html;
+  }
+
+  function permissionState() {
+    if (!navigator.permissions || !navigator.permissions.query) return Promise.resolve(null);
+    var names = ['loopback-network', 'local-network-access'];
+    function next(i) {
+      if (i >= names.length) return Promise.resolve(null);
+      return navigator.permissions.query({ name: names[i] })
+        .then(function (r) { return r.state; }, function () { return next(i + 1); });
+    }
+    return next(0);
+  }
+
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    show('pending', 'Connecting to the local server… If your browser shows a permission prompt, choose <b>Allow</b>.');
+    var done = false, ws;
+    function finish(ok, html) {
+      if (done) return;
+      done = true;
+      btn.disabled = false;
+      show(ok ? 'ok' : 'error', html);
+      try { ws.close(); } catch (e) {}
+    }
+    try {
+      ws = new WebSocket('ws://127.0.0.1:' + PORT);
+    } catch (e) {
+      finish(false, 'Your browser refused to open the connection: ' + String(e.message || e));
+      return;
+    }
+    ws.onopen = function () { ws.send(JSON.stringify({ type: 'probe' })); };
+    ws.onmessage = function (ev) {
+      var msg = {};
+      try { msg = JSON.parse(ev.data); } catch (e) {}
+      if (msg.type === 'probe_ok') {
+        finish(true, '<b>Connected.</b> Claude Bridge server ' + (msg.version ? 'v' + String(msg.version).replace(/[^\w.\-]/g, '') + ' ' : '')
+          + 'is reachable and this site is allowed. You can go back to your document.');
+      }
+    };
+    ws.onclose = function () {
+      if (done) return;
+      permissionState().then(function (state) {
+        var tips = '<ul><li>Check that a Claude session with the OnlyOffice Bridge plugin is running.</li>'
+          + (state === 'denied'
+            ? '<li>Your browser reports that this site is <b>not allowed</b> to access apps on this device. Click the site icon left of the address bar, reset that permission, reload this page and try again.</li>'
+            : '<li>If your browser never asked for permission, see the <a href="install.html#browsers">browser notes</a>.</li>')
+          + '</ul>';
+        finish(false, '<b>Could not reach Claude Bridge.</b>' + tips);
+      });
+    };
+    setTimeout(function () {
+      if (!done && ws.readyState === WebSocket.CONNECTING) return; // still waiting for the prompt
+      if (!done && ws.readyState === WebSocket.OPEN) finish(false, 'A server answered on port ' + PORT + ', but it is not Claude Bridge.');
+    }, 8000);
+  });
+})();
+</script>
+</body>
+</html>

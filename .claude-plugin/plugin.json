@@ -1,0 +1,16 @@
+{
+  "name": "onlyoffice-bridge",
+  "displayName": "OnlyOffice Bridge",
+  "version": "0.4.0",
+  "description": "Read and edit the documents, spreadsheets and presentations you have open in OnlyOffice (kDrive, Nextcloud, DocSpace…) through the Claude Bridge editor plugin.",
+  "author": { "name": "Maxim Lefebvre", "url": "https://github.com/maximlefebvre" },
+  "homepage": "https://maximlefebvre.github.io/onlyoffice-claude-bridge/",
+  "repository": "https://github.com/maximlefebvre/onlyoffice-claude-bridge",
+  "keywords": ["onlyoffice", "kdrive", "docx", "xlsx", "pptx", "office"],
+  "mcpServers": {
+    "onlyoffice": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/server.mjs"]
+    }
+  }
+}

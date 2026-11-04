@@ -19,7 +19,7 @@ import { cellTools } from './tools/cell.mjs';
 import { slideTools } from './tools/slide.mjs';
 import { referenceTools } from './tools/reference.mjs';
 
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 const port = parseInt(process.env.CLAUDE_BRIDGE_PORT || '47615', 10);
 const allowedOrigins = (process.env.CLAUDE_BRIDGE_ALLOWED_ORIGINS || 'https://maximlefebvre.github.io')
   .split(',').map((s) => s.trim()).filter(Boolean);
@@ -30,6 +30,7 @@ const bridge = new Bridge({
   allowedOrigins,
   token,
   timeoutMs: parseInt(process.env.CLAUDE_BRIDGE_TIMEOUT_MS || '20000', 10),
+  version: VERSION,
 });
 bridge.start();
 console.error(`[claude-bridge] token file: ${tokenFile}`);

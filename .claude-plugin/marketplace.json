@@ -1,0 +1,12 @@
+{
+  "name": "onlyoffice-bridge",
+  "description": "OnlyOffice Bridge: let Claude edit the documents open in your OnlyOffice editor.",
+  "owner": { "name": "Maxim Lefebvre", "url": "https://github.com/maximlefebvre" },
+  "plugins": [
+    {
+      "name": "onlyoffice-bridge",
+      "source": "./",
+      "description": "Read and edit the documents, spreadsheets and presentations open in OnlyOffice through the Claude Bridge editor plugin."
+    }
+  ]
+}

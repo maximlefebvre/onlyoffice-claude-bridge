@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install Claude Bridge</title>
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+  <p class="crumbs"><a href="./">OnlyOffice Claude Bridge</a> › Install guide</p>
+  <h1>Install guide</h1>
+  <p class="lead">About ten minutes, once. Afterwards you open a document, and Claude can read and edit it.</p>
+  <nav class="toc" aria-label="Sections">
+    <a href="#need">What you need</a><a href="#claude">1. Claude</a><a href="#onlyoffice">2. OnlyOffice</a>
+    <a href="#browser">3. Browser</a><a href="#approve">4. First connection</a><a href="#try">5. Try it</a><a href="#trouble">Troubleshooting</a>
+  </nav>
+
+  <div class="card" id="need">
+    <h2>What you need</h2>
+    <ul>
+      <li><b>Claude Code</b> (included in the Claude Pro and Max plans): the desktop app's Code tab or the <code class="inline">claude</code> command line. No API key needed.</li>
+      <li><b>Node.js 20 or later</b> (<a href="https://nodejs.org/">nodejs.org</a>). Check with <code class="inline">node --version</code>.</li>
+      <li>A document editor based on <b>OnlyOffice</b>, opened in your browser: kDrive (Infomaniak), Nextcloud, ONLYOFFICE DocSpace…</li>
+    </ul>
+  </div>
+
+  <div class="card" id="claude">
+    <h2>1. Add the plugin to Claude Code</h2>
+    <p>In a terminal:</p>
+    <code>claude plugin marketplace add maximlefebvre/onlyoffice-claude-bridge</code>
+    <code>claude plugin install onlyoffice-bridge@onlyoffice-bridge</code>
+    <p>Or inside a <code class="inline">claude</code> session, type <code class="inline">/plugin</code>, add the marketplace <code class="inline">maximlefebvre/onlyoffice-claude-bridge</code> and install <b>onlyoffice-bridge</b>.</p>
+    <p>New sessions now start the bridge server automatically. Updates come through <code class="inline">/plugin</code> like any other plugin.</p>
+    <p class="note">Using the Chat tab of Claude Desktop, or another MCP client? See <a href="https://github.com/maximlefebvre/onlyoffice-claude-bridge#other-mcp-clients">other clients</a>.
+      Only one Claude session at a time can run the bridge: a second one reports that the port is in use.</p>
+  </div>
+
+  <div class="card" id="onlyoffice">
+    <h2>2. Install the plugin in OnlyOffice</h2>
+    <ol class="steps">
+      <li>
+        <p>Open any document in your OnlyOffice editor, go to the <b>Plugins</b> tab and click <b>Plugin Manager</b>.</p>
+        <!-- screenshot: <figure><img src="img/plugin-manager.png" alt="The Plugins tab of the OnlyOffice editor, with the Plugin Manager button" width="1200" height="700" loading="lazy"><figcaption>Plugins → Plugin Manager</figcaption></figure> -->
+      </li>
+      <li>
+        <p>Click <b>&lt;/&gt;</b> at the top right of the Plugin Manager (developer mode), paste this store address and confirm:</p>
+        <code>https://maximlefebvre.github.io/onlyoffice-claude-bridge/store/index.html</code>
+        <!-- screenshot: <figure><img src="img/developer-mode.png" alt="The Plugin Manager in developer mode, with the store address pasted" width="1200" height="700" loading="lazy"><figcaption>Developer mode, with the store address</figcaption></figure> -->
+      </li>
+      <li>
+        <p>Find <b>Claude Bridge</b> in the list and click <b>Install</b>.</p>
+        <!-- screenshot: <figure><img src="img/install.png" alt="Claude Bridge in the custom store, with its Install button" width="1200" height="700" loading="lazy"><figcaption>Install Claude Bridge</figcaption></figure> -->
+      </li>
+      <li>
+        <p>Open it from the <b>Plugins</b> tab: a <b>Claude Bridge</b> panel appears on the left. It is installed for this browser and works in text documents, spreadsheets and presentations.</p>
+      </li>
+    </ol>
+  </div>
+
+  <div class="card" id="browser">
+    <h2>3. Allow your browser to reach Claude</h2>
+    <p>With a Claude session running, open <a href="connect.html"><b>this page</b></a> and click <b>Test connection</b>. If your browser asks whether the site may access apps on this device, tick <b>Remember</b> and <b>Allow</b>.</p>
+    <p>The permission is given to the plugin's site only, not to other websites.</p>
+    <h3 id="browsers">Browser notes</h3>
+    <table>
+      <tr><th>Firefox</th><td>Needed since version 151. The editor runs the plugin in a frame where Firefox cannot ask, so allow it once from the page above.</td></tr>
+      <tr><th>Chrome, Edge</th><td>Not tested yet. Chrome has a similar protection; if the panel cannot connect, please <a href="https://github.com/maximlefebvre/onlyoffice-claude-bridge/issues">open an issue</a>.</td></tr>
+      <tr><th>Safari</th><td>Not tested yet.</td></tr>
+    </table>
+  </div>
+
+  <div class="card" id="approve">
+    <h2>4. Approve the first connection</h2>
+    <p>In the Claude Bridge panel, the status reads <b>Approve the connection on your computer…</b> and a dialog opens on your computer asking whether this browser may connect. Choose <b>Allow</b>.</p>
+    <!-- screenshot: <figure><img src="img/approval.png" alt="The Claude Bridge approval dialog with Deny and Allow buttons" width="900" height="420" loading="lazy"><figcaption>The approval dialog (macOS)</figcaption></figure> -->
+    <p>The browser receives its own key and reconnects silently from then on. If no dialog can be shown (for example on a Linux server without a desktop), Claude asks you in the conversation instead.</p>
+    <p class="note">On Linux the dialog uses <code class="inline">zenity</code> or <code class="inline">kdialog</code>. To revoke a browser later, ask Claude to list or revoke the paired browsers.</p>
+  </div>
+
+  <div class="card" id="try">
+    <h2>5. Try it</h2>
+    <p>The panel shows a green dot and <b>Connected to Claude</b>. In Claude, ask for example:</p>
+    <ul>
+      <li>“Proofread my document and fix the typos, with track changes on.”</li>
+      <li>“Make the header row bold, add borders and a column chart of the sales.”</li>
+      <li>“Add a slide summarising the three key points, in Inter, on a dark background.”</li>
+    </ul>
+    <p>Edits appear live in the document and can be undone with <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd>.</p>
+  </div>
+
+  <div class="card" id="trouble">
+    <h2>Troubleshooting</h2>
+    <table>
+      <tr><th>Panel stays on “Connecting…” or “Reconnecting…”</th><td>Start (or restart) a Claude session, then run the test on the <a href="connect.html">connection page</a>.</td></tr>
+      <tr><th>“Connection denied”</th><td>The connection was refused in the dialog. Close and reopen the panel to ask again.</td></tr>
+      <tr><th>Claude says no document is connected</th><td>Open the Claude Bridge panel in that document. Each open document needs its panel open.</td></tr>
+      <tr><th>“Port in use”</th><td>Another Claude session already runs the bridge: close it, or use that session.</td></tr>
+      <tr><th>Old plugin version</th><td>In the Plugin Manager, remove Claude Bridge and install it again from the store.</td></tr>
+    </table>
+  </div>
+
+  <p class="note">
+    <a href="https://github.com/maximlefebvre/onlyoffice-claude-bridge">Source code</a> ·
+    Unofficial personal project, not affiliated with Anthropic or Ascensio System SIA (ONLYOFFICE).
+  </p>
+</main>
+</body>
+</html>

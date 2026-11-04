@@ -1,6 +1,6 @@
 # OnlyOffice Claude Bridge
 
-Let Claude (the Claude app or Claude Code) edit the document open in OnlyOffice, through an OnlyOffice plugin and a local MCP server. Designed for any OnlyOffice instance that accepts a custom plugin store (kDrive, Nextcloud, OnlyOffice Docs, Desktop Editors…).
+Let Claude edit the documents, spreadsheets and presentations open in OnlyOffice, through an OnlyOffice editor plugin and a local MCP server packaged as a Claude Code plugin. Works with a Claude subscription, no API key. Designed for any OnlyOffice instance that accepts a custom plugin store (kDrive, Nextcloud, OnlyOffice Docs, Desktop Editors…).
 
 > Unofficial personal project, not affiliated with Anthropic or Ascensio System SIA (ONLYOFFICE).
 
@@ -8,54 +8,66 @@ Let Claude (the Claude app or Claude Code) edit the document open in OnlyOffice,
 Claude ──MCP──▶ local server (127.0.0.1) ──WebSocket──▶ OnlyOffice plugin
 ```
 
+Step-by-step guide with screenshots: **https://maximlefebvre.github.io/onlyoffice-claude-bridge/install.html**
+
 ## Contents
 
-- `docs/`: static site published on GitHub Pages.
+- `.claude-plugin/`, `skills/`: the Claude Code plugin (`onlyoffice-bridge`) and its marketplace. The plugin starts the MCP server and adds an `onlyoffice` skill with the workflow, units and known pitfalls.
+- `mcp-server/`: the MCP server (Node.js ≥ 20). It exposes the tools to Claude and the WebSocket the plugin connects to. `dist/server.mjs` is a self-contained bundle (no `npm install` needed), rebuilt with `npm run build`.
+- `docs/`: static site published on GitHub Pages: landing page, install guide, browser permission page (`connect.html`).
   - `docs/store/`: the OnlyOffice plugin store app (AGPL-3.0, copied from ONLYOFFICE/onlyoffice.github.io). Plugin list: `docs/store/config.json`.
-  - `docs/sdkjs-plugins/content/claude-bridge/`: the plugin. It is deliberately generic: it runs code sent by the local server, so new actions never need a plugin update.
-- `mcp-server/`: the MCP server (Node.js ≥ 20). It exposes the tools to Claude and the WebSocket the plugin connects to.
+  - `docs/sdkjs-plugins/content/claude-bridge/`: the editor plugin. It is deliberately generic: it runs code sent by the local server, so new actions never need a plugin update.
 
 ## Setup
 
-### 1. Install the MCP server
+### 1. Install the Claude Code plugin
 
 ```bash
-cd mcp-server && npm install
+claude plugin marketplace add maximlefebvre/onlyoffice-claude-bridge
+claude plugin install onlyoffice-bridge@onlyoffice-bridge
 ```
 
-Claude Code:
+Each new Claude Code session then starts the server, which listens on `ws://127.0.0.1:47615`. Only one session at a time can use the port.
 
-```bash
-claude mcp add onlyoffice-claude-bridge -s user -- node /absolute/path/to/mcp-server/src/index.mjs
-```
+#### Other MCP clients
 
-Claude desktop app (`claude_desktop_config.json`):
+Claude desktop app (Chat tab), in `claude_desktop_config.json`, or any MCP client:
 
 ```json
 {
   "mcpServers": {
-    "onlyoffice-claude-bridge": {
+    "onlyoffice": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-server/src/index.mjs"]
+      "args": ["/absolute/path/to/onlyoffice-claude-bridge/mcp-server/dist/server.mjs"]
     }
   }
 }
 ```
 
-The server listens on `ws://127.0.0.1:47615`.
+Options (environment variables): `CLAUDE_BRIDGE_PORT`, `CLAUDE_BRIDGE_ALLOWED_ORIGINS` (default `https://maximlefebvre.github.io`), `CLAUDE_BRIDGE_TIMEOUT_MS`, `CLAUDE_BRIDGE_NO_DIALOG` (never show the approval dialog).
 
-Options (environment variables): `CLAUDE_BRIDGE_PORT`, `CLAUDE_BRIDGE_ALLOWED_ORIGINS` (default `https://maximlefebvre.github.io`), `CLAUDE_BRIDGE_TIMEOUT_MS`.
-
-### 2. Install the plugin
+### 2. Install the editor plugin
 
 In the OnlyOffice editor: Plugins → Plugin Manager → `</>` (developer mode) → paste
 `https://maximlefebvre.github.io/onlyoffice-claude-bridge/store/index.html`, then install **Claude Bridge** and open its panel. It connects by itself.
 
-The first time a browser connects, the server asks you to approve it: a dialog on macOS, or Claude asks you in the conversation on other systems. The plugin then receives its own token and reconnects silently afterwards. Approved browsers are listed in `~/.config/onlyoffice-claude-bridge/devices.json` (hashed tokens) and can be revoked with the `manage_paired_browsers` tool. A manual token (`~/.config/onlyoffice-claude-bridge/token`) can still be pasted under **Advanced** in the panel.
+### 3. Allow the browser
 
-### 3. Firefox only: allow the local connection
+Recent browsers stop websites from reaching `127.0.0.1` unless the user allows it, and Firefox (151+) cannot ask from inside the editor's plugin frame. Open [connect.html](https://maximlefebvre.github.io/onlyoffice-claude-bridge/connect.html) as a normal tab and click **Test connection**: the browser asks once, and the permission is stored for `maximlefebvre.github.io` only (Firefox checks the stored permission of the frame's own origin before anything else). Earlier versions of this guide suggested adding `127.0.0.1` to `network.lna.skip-domains`; that exposes local services to every site and can be removed.
 
-Since Firefox 151, a plugin frame cannot reach `127.0.0.1` by default and no permission prompt is shown. In `about:config`, add `127.0.0.1` to `network.lna.skip-domains`. Note that this lets any site reach services on `127.0.0.1`.
+### 4. Approve the first connection
+
+The first time a browser connects, the server asks you to approve it in a dialog on your computer (macOS: AppleScript, Windows: PowerShell, Linux: `zenity` or `kdialog`). Where no dialog can be shown, Claude asks you in the conversation (`list_connection_requests` / `approve_connection`). The plugin then receives its own token and reconnects silently afterwards. Approved browsers are listed in `~/.config/onlyoffice-claude-bridge/devices.json` (hashed tokens) and can be revoked with the `manage_paired_browsers` tool. A manual token (`~/.config/onlyoffice-claude-bridge/token`) can still be pasted under **Advanced** in the panel.
+
+## Development
+
+```bash
+cd mcp-server && npm install
+npm start          # run from the sources
+npm run build      # rebuild dist/server.mjs (commit it: the plugin runs the bundle)
+```
+
+To try the plugin from a local checkout: `claude --plugin-dir /path/to/onlyoffice-claude-bridge`.
 
 ## Tools
 

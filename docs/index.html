@@ -4,42 +4,30 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OnlyOffice Claude Bridge</title>
-  <style>
-    :root { --bg: #faf9f7; --fg: #1f1e1c; --muted: #6b6862; --accent: #c2603f; --card: #ffffff; --border: #e5e2dc; }
-    @media (prefers-color-scheme: dark) {
-      :root { --bg: #1c1b19; --fg: #eeece8; --muted: #a8a49c; --accent: #e8957a; --card: #262522; --border: #3a3834; }
-    }
-    body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 system-ui, -apple-system, sans-serif; }
-    main { max-width: 640px; margin: 0 auto; padding: 48px 16px; }
-    h1 { font-size: 1.6rem; margin: 0 0 8px; }
-    p.lead { color: var(--muted); margin: 0 0 28px; }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
-    h2 { font-size: 1rem; margin: 0 0 10px; }
-    code { font: 13px ui-monospace, Menlo, monospace; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; display: block; overflow-wrap: anywhere; }
-    ol { padding-left: 20px; margin: 0; }
-    li { margin: 4px 0; }
-    a { color: var(--accent); }
-    .note { font-size: 13px; color: var(--muted); }
-  </style>
+  <link rel="stylesheet" href="site.css">
 </head>
 <body>
 <main>
   <h1>OnlyOffice Claude Bridge</h1>
-  <p class="lead">An OnlyOffice plugin that lets Claude edit the open document, through a local server on your computer.</p>
+  <p class="lead">Let Claude read and edit the documents, spreadsheets and presentations you have open in OnlyOffice (kDrive, Nextcloud, DocSpace…), live, with your Claude subscription. No API key.</p>
 
   <div class="card">
-    <h2>Store URL to paste into OnlyOffice</h2>
-    <code id="store-url">https://maximlefebvre.github.io/onlyoffice-claude-bridge/store/index.html</code>
+    <h2>How it works</h2>
+    <p>A <b>Claude Code plugin</b> runs a small server on your computer. A <b>plugin inside the OnlyOffice editor</b> connects to it from your browser. Claude then uses about fifty tools: text and formatting, styles, tables, comments, track changes, images, charts, slides, and the full OnlyOffice API for everything else.</p>
+    <p>Nothing goes through a third-party server: the editor plugin only talks to <b>127.0.0.1</b>, and each browser has to be approved on your computer first.</p>
   </div>
 
   <div class="card">
-    <h2>Install the plugin</h2>
+    <h2>Get started</h2>
     <ol>
-      <li>Open a document in your OnlyOffice editor (for example in kDrive).</li>
-      <li>Go to <b>Plugins → Plugin Manager</b>, then click <b>&lt;/&gt;</b> (developer mode).</li>
-      <li>Paste the store URL above and confirm.</li>
-      <li>Install <b>Claude Bridge</b>, open its panel, paste the token printed by the local server, then click <b>Connect</b>.</li>
+      <li>Add the Claude Code plugin:
+        <code>claude plugin marketplace add maximlefebvre/onlyoffice-claude-bridge</code>
+        <code>claude plugin install onlyoffice-bridge@onlyoffice-bridge</code></li>
+      <li>In OnlyOffice, open <b>Plugins → Plugin Manager → &lt;/&gt;</b>, add this store and install <b>Claude Bridge</b>:
+        <code>https://maximlefebvre.github.io/onlyoffice-claude-bridge/store/index.html</code></li>
+      <li><a href="connect.html">Allow your browser</a> to reach Claude, then approve the first connection.</li>
     </ol>
+    <p><a href="install.html"><b>Step-by-step guide with screenshots →</b></a></p>
   </div>
 
   <p class="note">

@@ -67,26 +67,69 @@ class DeviceStore {
 // Asks the user on this computer whether to allow a new connection.
 // macOS: native dialog. Elsewhere (or if the dialog fails): returns null and the
 // request waits for approval through the MCP tools.
-function askNative(message) {
-  if (process.platform !== 'darwin' || process.env.CLAUDE_BRIDGE_NO_DIALOG) return Promise.resolve(null);
-  const esc = (t) => String(t).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  const script = `display dialog "${esc(message)}" with title "Claude Bridge" `
-    + 'buttons {"Deny", "Allow"} default button "Allow" cancel button "Deny" '
-    + 'with icon caution giving up after 120';
+// Runs a dialog command. Resolves true (allow), false (deny), null when it
+// fails or times out, or undefined when the command is not installed.
+function runDialog(cmd, args, { allow, deny, parse, env } = {}) {
   return new Promise((resolve) => {
-    execFile('osascript', ['-e', script], { timeout: 130000 }, (err, stdout) => {
-      if (err) {
-        // Exit code 1 = "Deny" (user cancelled). Anything else: dialog unavailable.
-        resolve(err.code === 1 ? false : null);
-        return;
-      }
-      resolve(/button returned:Allow/.test(stdout) && !/gave up:true/.test(stdout));
+    execFile(cmd, args, { timeout: 130000, env: { ...process.env, ...env }, windowsHide: false }, (err, stdout) => {
+      const code = err ? err.code : 0;
+      if (code === 'ENOENT') { resolve(undefined); return; }
+      if (err && (err.killed || typeof code !== 'number')) { resolve(null); return; }
+      if (parse) { resolve(parse(code, String(stdout))); return; }
+      resolve(code === allow ? true : code === deny ? false : null);
     });
   });
 }
 
+// Asks the user on this computer. Resolves true/false, or null when no dialog
+// can be shown (then the request waits for the approve_connection tool).
+export async function askNative(message) {
+  if (process.env.CLAUDE_BRIDGE_NO_DIALOG) return null;
+  return (await showDialog(message)) ?? null;
+}
+
+async function showDialog(message) {
+  const title = 'Claude Bridge';
+
+  if (process.platform === 'darwin') {
+    const esc = (t) => String(t).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const script = `display dialog "${esc(message)}" with title "${title}" `
+      + 'buttons {"Deny", "Allow"} default button "Allow" cancel button "Deny" '
+      + 'with icon caution giving up after 120';
+    // Exit code 1 = "Deny" (user cancelled).
+    return runDialog('osascript', ['-e', script], {
+      parse: (code, out) => (code === 0 ? /button returned:Allow/.test(out) && !/gave up:true/.test(out) : code === 1 ? false : null),
+    });
+  }
+
+  if (process.platform === 'win32') {
+    // The message goes through an environment variable: no quoting issues.
+    const ps = [
+      'Add-Type -AssemblyName System.Windows.Forms',
+      '$owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true }',
+      "$r = [System.Windows.Forms.MessageBox]::Show($owner, $env:CLAUDE_BRIDGE_DIALOG_TEXT, $env:CLAUDE_BRIDGE_DIALOG_TITLE, 'YesNo', 'Warning')",
+      'Write-Output $r',
+    ].join('; ');
+    return runDialog('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-Command', ps], {
+      env: { CLAUDE_BRIDGE_DIALOG_TEXT: message, CLAUDE_BRIDGE_DIALOG_TITLE: title },
+      parse: (code, out) => (code !== 0 ? null : /\bYes\b/.test(out) ? true : /\bNo\b/.test(out) ? false : null),
+    });
+  }
+
+  if (process.env.DISPLAY || process.env.WAYLAND_DISPLAY) {
+    const markup = String(message).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // zenity: 0 = OK, 1 = Cancel, 5 = timeout.
+    const z = await runDialog('zenity', ['--question', `--title=${title}`, `--text=${markup}`,
+      '--ok-label=Allow', '--cancel-label=Deny', '--icon-name=dialog-warning', '--timeout=120'], { allow: 0, deny: 1 });
+    if (z !== undefined) return z; // only fall back when zenity is not installed
+    return runDialog('kdialog', ['--title', title, '--warningyesno', message, '--yes-label', 'Allow', '--no-label', 'Deny'], { allow: 0, deny: 1 });
+  }
+  return null;
+}
+
 export class Bridge {
-  constructor({ port, host = '127.0.0.1', allowedOrigins, token, timeoutMs = 20000 }) {
+  constructor({ port, host = '127.0.0.1', allowedOrigins, token, timeoutMs = 20000, version = '' }) {
+    this.version = version;
     this.port = port;
     this.host = host;
     this.allowedOrigins = allowedOrigins;
@@ -139,6 +182,12 @@ export class Bridge {
       if (!this.clients.has(ws)) {
         if (ws._pairing) return; // still waiting for the user's decision
         clearTimeout(helloTimer);
+        if (msg.type === 'probe') {
+          // Connection check from the setup page: no access to documents.
+          ws.send(JSON.stringify({ type: 'probe_ok', server: 'onlyoffice-claude-bridge', version: this.version }));
+          ws.close(1000, 'probe');
+          return;
+        }
         if (msg.type !== 'hello') { ws.close(4001, 'expected hello'); return; }
         const client = this.#makeClient(ws, origin, msg.info || {});
         if (this.#sameToken(msg.token) || this.devices.has(msg.token)) {
