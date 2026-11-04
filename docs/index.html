@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OnlyOffice Claude Bridge</title>
+  <style>
+    :root { --bg: #faf9f7; --fg: #1f1e1c; --muted: #6b6862; --accent: #c2603f; --card: #ffffff; --border: #e5e2dc; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #1c1b19; --fg: #eeece8; --muted: #a8a49c; --accent: #e8957a; --card: #262522; --border: #3a3834; }
+    }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 system-ui, -apple-system, sans-serif; }
+    main { max-width: 640px; margin: 0 auto; padding: 48px 16px; }
+    h1 { font-size: 1.6rem; margin: 0 0 8px; }
+    p.lead { color: var(--muted); margin: 0 0 28px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+    h2 { font-size: 1rem; margin: 0 0 10px; }
+    code { font: 13px ui-monospace, Menlo, monospace; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; display: block; overflow-wrap: anywhere; }
+    ol { padding-left: 20px; margin: 0; }
+    li { margin: 4px 0; }
+    a { color: var(--accent); }
+    .note { font-size: 13px; color: var(--muted); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>OnlyOffice Claude Bridge</h1>
+  <p class="lead">Un plugin OnlyOffice qui permet à Claude d'éditer le document ouvert, via un serveur local sur ton ordinateur.</p>
+
+  <div class="card">
+    <h2>Adresse du store à coller dans OnlyOffice</h2>
+    <code id="store-url">https://maximlefebvre.github.io/onlyoffice-claude-bridge/store/index.html</code>
+  </div>
+
+  <div class="card">
+    <h2>Installer le plugin</h2>
+    <ol>
+      <li>Ouvre un document dans ton éditeur OnlyOffice (par exemple dans kDrive).</li>
+      <li>Va dans <b>Plugins → Gestionnaire de plugins</b>, puis clique sur <b>&lt;/&gt;</b> (mode développeur).</li>
+      <li>Colle l'adresse du store ci-dessus et valide.</li>
+      <li>Installe <b>Claude Bridge</b>, ouvre son panneau, colle le jeton affiché par le serveur local, puis clique sur <b>Connecter</b>.</li>
+    </ol>
+  </div>
+
+  <p class="note">
+    <a href="store/index.html">Aperçu du store</a> ·
+    <a href="https://github.com/maximlefebvre/onlyoffice-claude-bridge">Code source</a><br>
+    Projet personnel non officiel, sans lien avec Anthropic ni avec Ascensio System SIA (ONLYOFFICE).
+  </p>
+</main>
+</body>
+</html>
