@@ -13,17 +13,24 @@
  *   plugin -> server : { id, result } | { id, error }
  *
  * Methods: ping, get_info, run_command { code, scope, recalc }, execute_method { name, args }
+ *
+ * Transport: a direct WebSocket when the browser allows it. Browsers with
+ * Local Network Access (Firefox 151+, recent Chrome) block it from inside the
+ * editor frame and cannot ask there, so the panel falls back to a small relay
+ * window (relay.html, same origin, top-level) that holds the WebSocket.
  */
 (function (window) {
   'use strict';
 
-  var PLUGIN_VERSION = '0.3.0';
+  var PLUGIN_VERSION = '0.4.0';
   var STORAGE_KEY = 'claude-bridge-settings';
 
   var ws = null;
   var wantConnected = false;
   var retryDelay = 1000;
   var retryTimer = null;
+  var mode = 'direct'; // 'direct' or 'relay'
+  var relayWin = null;
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -32,6 +39,12 @@
   function setStatus(state, text) {
     $('dot').className = 'dot ' + ({ on: 'dot-on', wait: 'dot-wait' }[state] || 'dot-off');
     $('status').textContent = text;
+  }
+
+  function hint(text) {
+    var el = $('hint');
+    el.textContent = text || '';
+    el.hidden = !text;
   }
 
   function log(msg) {
@@ -47,6 +60,7 @@
       var s = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}');
       if (s.port) $('port').value = s.port;
       if (s.token) $('token').value = s.token;
+      if (s.mode === 'relay') mode = 'relay';
       return s;
     } catch (e) { return {}; }
   }
@@ -54,7 +68,7 @@
   function saveSettings() {
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        port: $('port').value, token: $('token').value
+        port: $('port').value, token: $('token').value, mode: mode
       }));
     } catch (e) { /* storage unavailable: carry on without it */ }
   }
@@ -169,10 +183,93 @@
     });
   }
 
+  // ---------- Relay window ----------
+
+  function relayAlive() { return !!(relayWin && !relayWin.closed); }
+
+  function relayName() {
+    return 'claude-bridge-relay-' + String(docInfo().documentId || 'default').replace(/[^\w-]/g, '_');
+  }
+
+  // Must run inside a click handler: browsers only allow pop-ups on a user gesture.
+  function openRelay() {
+    if (relayAlive()) return true;
+    var w = null;
+    try { w = window.open('relay.html', relayName(), 'popup=yes,width=380,height=240'); } catch (e) {}
+    if (!w) {
+      log('The relay window was blocked: allow pop-ups for this site, then click Connect.');
+      return false;
+    }
+    relayWin = w;
+    return true;
+  }
+
+  // A WebSocket look-alike that goes through the relay window.
+  function RelaySocket(url) {
+    var self = this;
+    this.readyState = 0; // CONNECTING
+    this.url = url;
+    this._title = docInfo().documentTitle || '';
+    this._onMessage = function (ev) {
+      if (ev.source !== relayWin || ev.origin !== window.location.origin) return;
+      var m = ev.data || {};
+      if (m.cb === 'ready') { self._connect(); return; }
+      if (m.cb === 'open') { self.readyState = 1; if (self.onopen) self.onopen({}); return; }
+      if (m.cb === 'message') { if (self.onmessage) self.onmessage({ data: m.data }); return; }
+      if (m.cb === 'error') { if (self.onerror) self.onerror({}); return; }
+      if (m.cb === 'closed') { self._closed(m.code || 1006, m.reason || ''); }
+    };
+    window.addEventListener('message', this._onMessage);
+    this._watch = setInterval(function () {
+      if (!relayAlive()) { relayWin = null; self._closed(4100, 'relay window closed'); }
+    }, 1000);
+    this._connect();
+  }
+  RelaySocket.prototype._connect = function () {
+    if (relayAlive() && this.readyState === 0) {
+      relayWin.postMessage({ cb: 'connect', url: this.url, title: this._title }, window.location.origin);
+    }
+  };
+  RelaySocket.prototype.send = function (data) {
+    if (this.readyState === 1 && relayAlive()) relayWin.postMessage({ cb: 'send', data: data }, window.location.origin);
+  };
+  RelaySocket.prototype.close = function () {
+    if (this.readyState === 3) return;
+    if (relayAlive()) relayWin.postMessage({ cb: 'close' }, window.location.origin);
+    this._closed(1000, '');
+  };
+  RelaySocket.prototype._closed = function (code, reason) {
+    if (this.readyState === 3) return;
+    this.readyState = 3;
+    clearInterval(this._watch);
+    window.removeEventListener('message', this._onMessage);
+    if (this.onclose) this.onclose({ code: code, reason: reason });
+  };
+
+  // Whether this frame is known to be allowed to reach the computer. null when
+  // the browser has no such permission (no Local Network Access).
+  function localAccessState() {
+    if (!navigator.permissions || !navigator.permissions.query) return Promise.resolve(null);
+    var names = ['loopback-network', 'local-network-access'];
+    function next(i) {
+      if (i >= names.length) return Promise.resolve(null);
+      return navigator.permissions.query({ name: names[i] })
+        .then(function (r) { return r.state; }, function () { return next(i + 1); });
+    }
+    return next(0);
+  }
+
+  function needRelayClick() {
+    wantConnected = false;
+    clearTimeout(retryTimer);
+    setStatus('wait', 'Click Connect');
+    hint('Your browser blocks the direct connection from the editor. Click Connect: a small window opens and relays the connection. Keep it open while you work.');
+  }
+
   // ---------- WebSocket ----------
 
   function send(obj) {
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
   }
 
   function scheduleRetry() {
@@ -190,12 +287,14 @@
     wantConnected = true;
     saveSettings();
 
-    if (ws) { try { ws.close(); } catch (e) {} }
-    setStatus('wait', 'Connecting…');
+    if (ws) { var prev = ws; ws = null; try { prev.close(); } catch (e) {} }
 
     var url = 'ws://127.0.0.1:' + port;
+    if (mode === 'relay' && !relayAlive()) { needRelayClick(); return; }
+    setStatus('wait', 'Connecting…');
+    hint(mode === 'relay' ? 'Connected through the relay window: keep it open while you work.' : '');
     try {
-      ws = new WebSocket(url);
+      ws = mode === 'relay' ? new RelaySocket(url) : new WebSocket(url);
     } catch (e) {
       log('Cannot open ' + url + ': ' + e.message);
       setStatus('off', 'Connection failed');
@@ -204,9 +303,11 @@
     }
 
     var welcomed = false;
+    var opened = false;
     var sock = ws;
 
     sock.onopen = function () {
+      opened = true;
       send({ type: 'hello', token: token || null, info: docInfo() });
     };
 
@@ -248,6 +349,18 @@
         log('The connection was denied on your computer. Click Connect to ask again.');
         return;
       }
+      if (ev.code === 4100) { log('The relay window was closed.'); needRelayClick(); return; }
+      if (mode === 'direct' && !opened) {
+        // Blocked by the browser, or the server is not running? Ask the browser.
+        localAccessState().then(function (state) {
+          if (state && state !== 'granted' && ws === null && wantConnected) {
+            mode = 'relay';
+            saveSettings();
+            log('The browser blocks local connections from the editor: switching to the relay window.');
+            needRelayClick();
+          }
+        });
+      }
       setStatus(wantConnected ? 'wait' : 'off', wantConnected ? 'Reconnecting…' : 'Disconnected');
       scheduleRetry();
     };
@@ -257,13 +370,22 @@
     wantConnected = false;
     clearTimeout(retryTimer);
     if (ws) { var s = ws; ws = null; s.close(); }
+    if (relayAlive()) { try { relayWin.close(); } catch (e) {} }
+    relayWin = null;
+    hint('');
     setStatus('off', 'Disconnected');
+  }
+
+  function onConnectClick() {
+    if (mode === 'relay' && !openRelay()) { needRelayClick(); return; }
+    retryDelay = 1000;
+    connect();
   }
 
   // ---------- Startup ----------
 
   function start() {
-    $('connect').onclick = connect;
+    $('connect').onclick = onConnectClick;
     $('disconnect').onclick = disconnect;
     loadSettings();
     connect(); // connects (or asks for approval) automatically

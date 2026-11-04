@@ -51,9 +51,9 @@ Options (environment variables): `CLAUDE_BRIDGE_PORT`, `CLAUDE_BRIDGE_ALLOWED_OR
 In the OnlyOffice editor: Plugins → Plugin Manager → `</>` (developer mode) → paste
 `https://maximlefebvre.github.io/onlyoffice-claude-bridge/store/index.html`, then install **Claude Bridge** and open its panel. It connects by itself.
 
-### 3. Firefox: allow the local connection
+### 3. Browsers with Local Network Access (Firefox 151+, recent Chrome)
 
-Since Firefox 151 (Local Network Access), the plugin frame cannot reach `127.0.0.1` and no prompt is shown: the permissions policy blocks prompts in cross-origin frames, and the WebSocket's triggering principal is partitioned under the editor's top-level site, so a permission granted to `maximlefebvre.github.io` in a normal tab (see [connect.html](https://maximlefebvre.github.io/onlyoffice-claude-bridge/connect.html)) does not apply. Workaround: in `about:config`, add `127.0.0.1` to `network.lna.skip-domains`. This lets any site reach services on `127.0.0.1`.
+These browsers block the plugin frame from reaching `127.0.0.1`: prompts are not allowed in cross-origin frames, and the WebSocket's triggering principal is partitioned under the editor's top-level site, so a permission granted to `maximlefebvre.github.io` in a normal tab does not apply there. The panel detects it (Permissions API) and switches to a **relay window**: on **Connect**, it opens `relay.html` (same origin, top-level), which can ask for the permission, holds the WebSocket and relays frames to the panel with `postMessage`. One relay window per document tab; it closes when the panel goes away. The `network.lna.skip-domains` workaround is no longer needed (it exposed local services to every site).
 
 ### 4. Approve the first connection
 

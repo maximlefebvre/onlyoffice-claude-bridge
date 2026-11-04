@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Bridge relay</title>
+  <style>
+    :root { --bg: #faf9f7; --fg: #1f1e1c; --muted: #6b6862; --border: #e5e2dc; --on: #3aa655; --wait: #e0a030; --off: #9a9a9a; }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) { --bg: #1c1b19; --fg: #eeece8; --muted: #a8a49c; --border: #3a3834; }
+    }
+    :root[data-theme="dark"] { --bg: #1c1b19; --fg: #eeece8; --muted: #a8a49c; --border: #3a3834; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { padding: 16px; }
+    .status { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 8px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--off); flex: none; }
+    .dot.on { background: var(--on); }
+    .dot.wait { background: var(--wait); }
+    p { margin: 0 0 8px; color: var(--muted); }
+    #doc { color: var(--fg); font-weight: 600; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="status"><span id="dot" class="dot wait"></span><span id="status">Starting…</span></div>
+  <p>Relaying <span id="doc">a document</span> to Claude.</p>
+  <p>Keep this window open while you work. It closes by itself when the document is closed.</p>
+</main>
+<script>
+/*
+ * Claude Bridge relay.
+ *
+ * Browsers block the plugin frame inside the editor from reaching 127.0.0.1
+ * (Local Network Access): no prompt is shown in a cross-site frame, and a
+ * site permission does not apply there. This window is a top-level page of
+ * the same origin, so the browser can ask once and remember it. It holds the
+ * WebSocket and relays frames to and from the plugin panel that opened it.
+ *
+ * panel -> relay : { cb: "connect", url, title } | { cb: "send", data } | { cb: "close" }
+ * relay -> panel : { cb: "ready" } | { cb: "open" } | { cb: "message", data }
+ *                  | { cb: "error" } | { cb: "closed", code, reason }
+ */
+(function () {
+  'use strict';
+  var ORIGIN = location.origin;
+  var ws = null;
+  var $ = function (id) { return document.getElementById(id); };
+
+  function setStatus(state, text) {
+    $('dot').className = 'dot ' + state;
+    $('status').textContent = text;
+  }
+
+  function toPanel(msg) {
+    if (window.opener && !window.opener.closed) window.opener.postMessage(msg, ORIGIN);
+  }
+
+  function openSocket(url) {
+    if (ws) { var old = ws; ws = null; try { old.close(); } catch (e) {} }
+    // Only the local bridge server may be reached from here.
+    if (!/^ws:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{1,5}\/?$/.test(url)) {
+      toPanel({ cb: 'closed', code: 4000, reason: 'invalid url' });
+      return;
+    }
+    setStatus('wait', 'Connecting…');
+    var sock;
+    try { sock = new WebSocket(url); } catch (e) {
+      setStatus('', 'Connection failed');
+      toPanel({ cb: 'closed', code: 1006, reason: String(e.message || e) });
+      return;
+    }
+    ws = sock;
+    sock.onopen = function () { if (sock === ws) { setStatus('on', 'Connected to Claude'); toPanel({ cb: 'open' }); } };
+    sock.onmessage = function (ev) { if (sock === ws) toPanel({ cb: 'message', data: String(ev.data) }); };
+    sock.onerror = function () { if (sock === ws) toPanel({ cb: 'error' }); };
+    sock.onclose = function (ev) {
+      if (sock !== ws) return;
+      ws = null;
+      setStatus('wait', 'Waiting for Claude…');
+      toPanel({ cb: 'closed', code: ev.code, reason: ev.reason });
+    };
+  }
+
+  window.addEventListener('message', function (ev) {
+    if (ev.origin !== ORIGIN || ev.source !== window.opener) return;
+    var m = ev.data || {};
+    if (m.cb === 'connect') {
+      if (m.title) { $('doc').textContent = '“' + String(m.title) + '”'; document.title = 'Claude Bridge — ' + String(m.title); }
+      openSocket(String(m.url || ''));
+    } else if (m.cb === 'send') {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(String(m.data));
+    } else if (m.cb === 'close') {
+      if (ws) { var s = ws; ws = null; try { s.close(); } catch (e) {} }
+      setStatus('', 'Disconnected');
+    }
+  });
+
+  // Close with the document: the panel (opener) disappears when the editor is closed.
+  setInterval(function () {
+    if (!window.opener || window.opener.closed) {
+      if (ws) { try { ws.close(); } catch (e) {} }
+      window.close();
+    }
+  }, 1000);
+
+  if (!window.opener) {
+    setStatus('', 'Open this window from the Claude Bridge panel');
+  } else {
+    setStatus('wait', 'Waiting for the panel…');
+    toPanel({ cb: 'ready' });
+  }
+})();
+</script>
+</body>
+</html>

@@ -11,3 +11,5 @@
 .cb-advanced { margin-top: 4px; }
 .cb-advanced summary { cursor: pointer; opacity: .8; }
 .cb-advanced[open] { display: flex; flex-direction: column; gap: 6px; }
+.cb-hint { padding: 8px; border-radius: 3px; background: rgba(224,160,48,.15); line-height: 1.4; }
+.cb-hint[hidden] { display: none; }

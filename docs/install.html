@@ -63,10 +63,10 @@
     <p>With a Claude session running, open <a href="connect.html"><b>the connection test</b></a> and click <b>Test connection</b>. Then check the notes for your browser below.</p>
     <h3 id="browsers">Browser notes</h3>
     <table>
-      <tr><th>Firefox</th><td>Since version 151, Firefox blocks the plugin frame from reaching <code class="inline">127.0.0.1</code> without asking, and a permission given to the site in a normal tab does not apply inside the editor.
-      Workaround for now: in <code class="inline">about:config</code>, add <code class="inline">127.0.0.1</code> to <code class="inline">network.lna.skip-domains</code>.
-      Be aware that this lets <b>any</b> website send requests to services running on your computer; avoid it if you run local servers without authentication. A browser extension that removes this step is planned.</td></tr>
-      <tr><th>Chrome, Edge</th><td>Not tested yet. Chrome has a similar protection; if the panel cannot connect, please <a href="https://github.com/maximlefebvre/onlyoffice-claude-bridge/issues">open an issue</a>.</td></tr>
+      <tr><th>Firefox</th><td>Since version 151, Firefox blocks the editor's plugin frame from reaching <code class="inline">127.0.0.1</code>, without asking.
+      The panel then shows <b>Click Connect</b>: click it, and a small <b>relay window</b> opens and carries the connection. The first time, Firefox asks in that window whether the site may access apps on this device: tick <b>Remember</b> and <b>Allow</b>.
+      Keep the relay window open while you work (one per document tab); it closes by itself with the document. If nothing opens, allow pop-ups for the editor's site.</td></tr>
+      <tr><th>Chrome, Edge</th><td>Recent versions have a similar protection and should use the same relay window. Not tested yet inside an editor: if the panel cannot connect, please <a href="https://github.com/maximlefebvre/onlyoffice-claude-bridge/issues">open an issue</a>.</td></tr>
       <tr><th>Safari</th><td>Not tested yet.</td></tr>
     </table>
   </div>
@@ -93,6 +93,7 @@
   <div class="card" id="trouble">
     <h2>Troubleshooting</h2>
     <table>
+      <tr><th>Panel shows “Click Connect”</th><td>Your browser blocks direct connections from the editor: click <b>Connect</b> to open the relay window, and keep it open.</td></tr>
       <tr><th>Panel stays on “Connecting…” or “Reconnecting…”</th><td>Start (or restart) a Claude session, then run the test on the <a href="connect.html">connection page</a>.</td></tr>
       <tr><th>“Connection denied”</th><td>The connection was refused in the dialog. Close and reopen the panel to ask again.</td></tr>
       <tr><th>Claude says no document is connected</th><td>Open the Claude Bridge panel in that document. Each open document needs its panel open.</td></tr>
