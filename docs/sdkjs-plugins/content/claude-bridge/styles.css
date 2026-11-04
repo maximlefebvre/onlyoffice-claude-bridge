@@ -1,0 +1,10 @@
+.cb { padding: 12px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.cb-status { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 6px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.dot-off { background: #9a9a9a; }
+.dot-wait { background: #e0a030; }
+.dot-on { background: #3aa655; }
+.cb-label { margin-top: 6px; opacity: .8; }
+.cb-actions { display: flex; gap: 6px; margin-top: 8px; }
+.cb-log { font-family: ui-monospace, Menlo, monospace; font-size: 11px; max-height: 180px; overflow-y: auto;
+  border: 1px solid rgba(128,128,128,.35); border-radius: 3px; padding: 6px; white-space: pre-wrap; word-break: break-word; }
