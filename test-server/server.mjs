@@ -1,5 +1,5 @@
 // WebSocket test server for step 1 (no MCP yet).
-// Start it, connect the plugin, then type commands: ping, info, sel.
+// Start it, connect the plugin, then type commands: ping, info, sel, lorem, insert <text>.
 //
 //   node server.mjs
 //
@@ -32,6 +32,7 @@ const sameToken = (t) => {
 };
 
 const clients = new Map(); // ws -> { id, info }
+let nextClientId = 1;
 const pending = new Map(); // requestId -> { resolve, reject, timer }
 
 const wss = new WebSocketServer({
@@ -59,7 +60,7 @@ wss.on('connection', (ws, req) => {
         ws.close(4001, 'bad token');
         return;
       }
-      const c = { id: clients.size + 1, info: msg.info || {} };
+      const c = { id: nextClientId++, info: msg.info || {} };
       clients.set(ws, c);
       ws.send(JSON.stringify({ type: 'welcome' }));
       console.log(`✓ plugin #${c.id} connected from ${origin}`, c.info);
@@ -94,19 +95,29 @@ wss.on('listening', () => {
   console.log(`Test server on ws://127.0.0.1:${PORT}`);
   console.log(`Allowed origins: ${ALLOWED_ORIGINS.join(', ')}`);
   console.log(`Token to paste into the plugin: ${TOKEN}`);
-  console.log('Commands: ping | info | sel | quit');
+  console.log(HELP);
 });
 
+const LOREM = [
+  'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
+  'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.',
+  'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.',
+].join('\n');
+
+const HELP = 'Commands: ping | info | sel | lorem | insert <text> | quit';
 const aliases = { ping: 'ping', info: 'get_info', sel: 'get_selected_text' };
 readline.createInterface({ input: process.stdin }).on('line', async (line) => {
   const cmd = line.trim();
   if (!cmd) return;
   if (cmd === 'quit') process.exit(0);
-  const method = aliases[cmd];
-  if (!method) return console.log('Commands: ping | info | sel | quit');
+  let method = aliases[cmd];
+  let params = {};
+  if (cmd === 'lorem') { method = 'insert_text'; params = { text: LOREM }; }
+  else if (cmd.startsWith('insert ')) { method = 'insert_text'; params = { text: cmd.slice(7).replace(/\\n/g, '\n') }; }
+  if (!method) return console.log(HELP);
   if (!clients.size) return console.log('No plugin connected.');
   for (const [ws, c] of clients) {
-    try { console.log(`#${c.id} →`, await call(ws, method)); }
+    try { console.log(`#${c.id} →`, await call(ws, method, params)); }
     catch (e) { console.log(`#${c.id} error:`, e.message); }
   }
 });

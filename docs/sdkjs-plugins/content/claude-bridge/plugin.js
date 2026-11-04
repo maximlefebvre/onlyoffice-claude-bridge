@@ -13,7 +13,7 @@
 (function (window) {
   'use strict';
 
-  var PLUGIN_VERSION = '0.1.0';
+  var PLUGIN_VERSION = '0.1.1';
   var STORAGE_KEY = 'claude-bridge-settings';
 
   var ws = null;
@@ -93,8 +93,34 @@
         Numbering: false, Math: false,
         TableCellSeparator: '\n', ParaSeparator: '\n', TabSymbol: '\t'
       }]).then(function (text) { return { text: text || '' }; });
+    },
+    // Inserts text at the cursor; each line becomes a paragraph.
+    insert_text: function (params) {
+      var text = String(params.text || '');
+      if (!text) return Promise.reject(new Error('Missing "text"'));
+      window.Asc.scope.paragraphs = text.split(/\r?\n/);
+      return callCommand(function () {
+        var doc = Api.GetDocument();
+        var content = Asc.scope.paragraphs.map(function (line) {
+          var p = Api.CreateParagraph();
+          p.AddText(line);
+          return p;
+        });
+        doc.InsertContent(content);
+        return content.length;
+      }).then(function (count) { return { inserted: count }; });
     }
   };
+
+  function callCommand(fn) {
+    return new Promise(function (resolve, reject) {
+      if (!(window.Asc && window.Asc.plugin && window.Asc.plugin.callCommand)) {
+        reject(new Error('Not running inside an OnlyOffice editor'));
+        return;
+      }
+      window.Asc.plugin.callCommand(fn, false, true, function (res) { resolve(res); });
+    });
+  }
 
   function handleCommand(msg) {
     var h = handlers[msg.method];
