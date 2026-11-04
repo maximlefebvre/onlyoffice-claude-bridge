@@ -1,25 +1,25 @@
 # OnlyOffice Claude Bridge
 
-Permettre à Claude (app Claude ou Claude Code) d'éditer le document OnlyOffice ouvert, via un plugin OnlyOffice et un serveur MCP local. Conçu pour toute instance OnlyOffice qui accepte un store de plugins personnalisé (kDrive, Nextcloud, OnlyOffice Docs, Desktop Editors…).
+Let Claude (the Claude app or Claude Code) edit the document open in OnlyOffice, through an OnlyOffice plugin and a local MCP server. Designed for any OnlyOffice instance that accepts a custom plugin store (kDrive, Nextcloud, OnlyOffice Docs, Desktop Editors…).
 
-> Projet personnel non officiel, sans lien avec Anthropic ni avec Ascensio System SIA (ONLYOFFICE).
+> Unofficial personal project, not affiliated with Anthropic or Ascensio System SIA (ONLYOFFICE).
 
 ```
-Claude ──MCP──▶ serveur local (127.0.0.1) ──WebSocket──▶ plugin OnlyOffice
+Claude ──MCP──▶ local server (127.0.0.1) ──WebSocket──▶ OnlyOffice plugin
 ```
 
-## Contenu
+## Contents
 
-- `docs/` : site statique à publier sur GitHub Pages.
-  - `docs/store/` : application « store » d'OnlyOffice (AGPL-3.0, copiée de ONLYOFFICE/onlyoffice.github.io). Liste des plugins : `docs/store/config.json`.
-  - `docs/sdkjs-plugins/content/claude-bridge/` : le plugin.
-- `test-server/` : serveur WebSocket de test (étape 1, sans MCP).
+- `docs/`: static site published on GitHub Pages.
+  - `docs/store/`: the OnlyOffice plugin store app (AGPL-3.0, copied from ONLYOFFICE/onlyoffice.github.io). Plugin list: `docs/store/config.json`.
+  - `docs/sdkjs-plugins/content/claude-bridge/`: the plugin.
+- `test-server/`: WebSocket test server (step 1, no MCP yet).
 
-## Étape 1 : tester dans un éditeur OnlyOffice (ex. kDrive)
+## Step 1: test in an OnlyOffice editor (e.g. kDrive)
 
-1. `cd test-server && npm install && node server.mjs`. Le serveur affiche le jeton (enregistré dans `~/.config/onlyoffice-claude-bridge/token`).
-2. Ouvrir l'éditeur → Plugins → Gestionnaire de plugins → `</>` (mode développeur) → coller `https://maximlefebvre.github.io/onlyoffice-claude-bridge/store/index.html`.
-3. Installer « Claude Bridge », ouvrir le panneau, coller le jeton, cliquer sur « Connecter ».
-4. Dans le terminal du serveur, taper `ping`, `info` ou `sel` (après avoir sélectionné du texte).
+1. `cd test-server && npm install && node server.mjs`. The server prints the token (stored in `~/.config/onlyoffice-claude-bridge/token`).
+2. Open the editor → Plugins → Plugin Manager → `</>` (developer mode) → paste `https://maximlefebvre.github.io/onlyoffice-claude-bridge/store/index.html`.
+3. Install "Claude Bridge", open its panel, paste the token, click "Connect".
+4. In the server terminal, type `ping`, `info` or `sel` (after selecting some text).
 
-Si le serveur affiche « origine non autorisée : X », relancer avec `ALLOWED_ORIGINS=X node server.mjs`.
+If the server prints "origin not allowed: X", restart it with `ALLOWED_ORIGINS=X node server.mjs`.

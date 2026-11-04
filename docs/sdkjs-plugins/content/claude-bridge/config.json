@@ -1,6 +1,8 @@
 {
   "name": "Claude Bridge",
-  "nameLocale": { "fr": "Claude Bridge", "en": "Claude Bridge" },
+  "nameLocale": {
+    "en": "Claude Bridge"
+  },
   "offered": "Maxim Lefebvre",
   "guid": "asc.{94F53A2A-11A7-4AD1-9BC9-F96E2A6CDF8A}",
   "baseUrl": "",
@@ -9,17 +11,43 @@
   "variations": [
     {
       "description": "Connects this document to Claude (Claude app or Claude Code) through a local MCP server on your computer.",
-      "descriptionLocale": {
-        "fr": "Relie ce document à Claude (app Claude ou Claude Code) via un serveur MCP local sur ton ordinateur."
-      },
       "url": "index.html",
-      "icons": ["resources/light/icon.svg", "resources/light/icon@2x.svg"],
+      "icons": [
+        "resources/light/icon.svg",
+        "resources/light/icon@2x.svg"
+      ],
       "icons2": [
-        { "theme": "flat", "style": "light", "100%": { "normal": "resources/light/icon.svg" }, "200%": { "normal": "resources/light/icon@2x.svg" }, "default": { "normal": "resources/light/icon.svg" } },
-        { "theme": "flatDark", "style": "dark", "100%": { "normal": "resources/dark/icon.svg" }, "200%": { "normal": "resources/dark/icon@2x.svg" }, "default": { "normal": "resources/dark/icon.svg" } }
+        {
+          "theme": "flat",
+          "style": "light",
+          "100%": {
+            "normal": "resources/light/icon.svg"
+          },
+          "200%": {
+            "normal": "resources/light/icon@2x.svg"
+          },
+          "default": {
+            "normal": "resources/light/icon.svg"
+          }
+        },
+        {
+          "theme": "flatDark",
+          "style": "dark",
+          "100%": {
+            "normal": "resources/dark/icon.svg"
+          },
+          "200%": {
+            "normal": "resources/dark/icon@2x.svg"
+          },
+          "default": {
+            "normal": "resources/dark/icon.svg"
+          }
+        }
       ],
       "isViewer": false,
-      "EditorsSupport": ["word"],
+      "EditorsSupport": [
+        "word"
+      ],
       "type": "panel",
       "isVisual": true,
       "isModal": false,
@@ -27,11 +55,22 @@
       "initDataType": "none",
       "initData": "",
       "isUpdateOleOnResize": false,
-      "size": [300, 400],
+      "size": [
+        300,
+        400
+      ],
       "store": {
-        "background": { "light": "#D97757", "dark": "#D97757" },
-        "categories": ["work"],
-        "icons": { "light": "resources/store/icons", "dark": "resources/store/icons" }
+        "background": {
+          "light": "#D97757",
+          "dark": "#D97757"
+        },
+        "categories": [
+          "work"
+        ],
+        "icons": {
+          "light": "resources/store/icons",
+          "dark": "resources/store/icons"
+        }
       }
     }
   ]

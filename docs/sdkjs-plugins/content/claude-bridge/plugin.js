@@ -1,14 +1,14 @@
 /*
- * Claude Bridge — plugin OnlyOffice.
+ * Claude Bridge — OnlyOffice plugin.
  *
- * Se connecte en WebSocket au serveur local (127.0.0.1) et exécute les commandes
- * qu'il envoie sur le document ouvert.
+ * Connects over WebSocket to the local server (127.0.0.1) and runs the commands
+ * it sends against the open document.
  *
- * Protocole (JSON) :
- *   plugin -> serveur : { type: "hello", token, info }
- *   serveur -> plugin : { type: "welcome" }            (sinon la connexion est fermée)
- *   serveur -> plugin : { id, method, params }
- *   plugin -> serveur : { id, result } | { id, error }
+ * Protocol (JSON):
+ *   plugin -> server : { type: "hello", token, info }
+ *   server -> plugin : { type: "welcome" }             (otherwise the connection is closed)
+ *   server -> plugin : { id, method, params }
+ *   plugin -> server : { id, result } | { id, error }
  */
 (function (window) {
   'use strict';
@@ -52,10 +52,10 @@
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
         port: $('port').value, token: $('token').value
       }));
-    } catch (e) { /* stockage indisponible : on continue sans */ }
+    } catch (e) { /* storage unavailable: carry on without it */ }
   }
 
-  // ---------- Infos document ----------
+  // ---------- Document info ----------
 
   function docInfo() {
     var info = (window.Asc && window.Asc.plugin && window.Asc.plugin.info) || {};
@@ -69,12 +69,12 @@
     };
   }
 
-  // ---------- Commandes ----------
+  // ---------- Commands ----------
 
   function executeMethod(name, args) {
     return new Promise(function (resolve, reject) {
       if (!(window.Asc && window.Asc.plugin && window.Asc.plugin.executeMethod)) {
-        reject(new Error('Pas dans un éditeur OnlyOffice'));
+        reject(new Error('Not running inside an OnlyOffice editor'));
         return;
       }
       window.Asc.plugin.executeMethod(name, args || [], function (res) { resolve(res); });
@@ -98,12 +98,12 @@
 
   function handleCommand(msg) {
     var h = handlers[msg.method];
-    var p = h ? h(msg.params || {}) : Promise.reject(new Error('Méthode inconnue : ' + msg.method));
+    var p = h ? h(msg.params || {}) : Promise.reject(new Error('Unknown method: ' + msg.method));
     log('← ' + msg.method);
     p.then(function (result) {
       send({ id: msg.id, result: result });
     }, function (err) {
-      log('✗ ' + msg.method + ' : ' + err.message);
+      log('✗ ' + msg.method + ': ' + err.message);
       send({ id: msg.id, error: { message: err.message } });
     });
   }
@@ -125,19 +125,19 @@
     clearTimeout(retryTimer);
     var port = parseInt($('port').value, 10);
     var token = $('token').value.trim();
-    if (!port || !token) { setStatus('off', 'Port et jeton requis'); return; }
+    if (!port || !token) { setStatus('off', 'Port and token required'); return; }
     wantConnected = true;
     saveSettings();
 
     if (ws) { try { ws.close(); } catch (e) {} }
-    setStatus('wait', 'Connexion…');
+    setStatus('wait', 'Connecting…');
 
     var url = 'ws://127.0.0.1:' + port;
     try {
       ws = new WebSocket(url);
     } catch (e) {
-      log('Impossible d\'ouvrir ' + url + ' : ' + e.message);
-      setStatus('off', 'Échec de connexion');
+      log('Cannot open ' + url + ': ' + e.message);
+      setStatus('off', 'Connection failed');
       scheduleRetry();
       return;
     }
@@ -155,8 +155,8 @@
       if (msg.type === 'welcome') {
         welcomed = true;
         retryDelay = 1000;
-        setStatus('on', 'Connecté à Claude');
-        log('Connecté (' + url + ')');
+        setStatus('on', 'Connected to Claude');
+        log('Connected (' + url + ')');
         return;
       }
       if (!welcomed) return;
@@ -164,7 +164,7 @@
     };
 
     sock.onerror = function () {
-      log('Erreur WebSocket (serveur lancé ? navigateur qui bloque localhost ?)');
+      log('WebSocket error (is the server running? is the browser blocking localhost?)');
     };
 
     sock.onclose = function (ev) {
@@ -172,11 +172,11 @@
       ws = null;
       if (ev.code === 4001) {
         wantConnected = false;
-        setStatus('off', 'Jeton refusé');
-        log('Jeton refusé par le serveur');
+        setStatus('off', 'Token rejected');
+        log('Token rejected by the server');
         return;
       }
-      setStatus(wantConnected ? 'wait' : 'off', wantConnected ? 'Reconnexion…' : 'Déconnecté');
+      setStatus(wantConnected ? 'wait' : 'off', wantConnected ? 'Reconnecting…' : 'Disconnected');
       scheduleRetry();
     };
   }
@@ -185,10 +185,10 @@
     wantConnected = false;
     clearTimeout(retryTimer);
     if (ws) { var s = ws; ws = null; s.close(); }
-    setStatus('off', 'Déconnecté');
+    setStatus('off', 'Disconnected');
   }
 
-  // ---------- Démarrage ----------
+  // ---------- Startup ----------
 
   function start() {
     $('connect').onclick = connect;
@@ -204,7 +204,7 @@
     window.Asc.plugin.init = startOnce;
     window.Asc.plugin.button = function () { disconnect(); this.executeCommand('close', ''); };
   }
-  // Hors éditeur (test dans un navigateur) : démarrer quand même.
+  // Outside the editor (testing in a plain browser): start anyway.
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () { setTimeout(startOnce, 300); });
   } else {
