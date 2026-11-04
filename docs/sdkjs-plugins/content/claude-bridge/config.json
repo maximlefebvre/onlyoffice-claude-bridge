@@ -6,11 +6,11 @@
   "offered": "Maxim Lefebvre",
   "guid": "asc.{94F53A2A-11A7-4AD1-9BC9-F96E2A6CDF8A}",
   "baseUrl": "",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "minVersion": "8.1.0",
   "variations": [
     {
-      "description": "Connects this document to Claude (Claude app or Claude Code) through a local MCP server on your computer.",
+      "description": "Connects this document, spreadsheet or presentation to Claude (Claude app or Claude Code) through a local MCP server on your computer.",
       "url": "index.html",
       "icons": [
         "resources/light/icon.svg",
@@ -46,7 +46,9 @@
       ],
       "isViewer": false,
       "EditorsSupport": [
-        "word"
+        "word",
+        "cell",
+        "slide"
       ],
       "type": "panel",
       "isVisual": true,

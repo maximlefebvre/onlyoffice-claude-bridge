@@ -9,11 +9,13 @@
  *   server -> plugin : { type: "welcome" }             (otherwise the connection is closed)
  *   server -> plugin : { id, method, params }
  *   plugin -> server : { id, result } | { id, error }
+ *
+ * Methods: ping, get_info, run_command { code, scope, recalc }, execute_method { name, args }
  */
 (function (window) {
   'use strict';
 
-  var PLUGIN_VERSION = '0.1.1';
+  var PLUGIN_VERSION = '0.2.0';
   var STORAGE_KEY = 'claude-bridge-settings';
 
   var ws = null;
@@ -81,6 +83,61 @@
     });
   }
 
+  // Editor calls are serialized: OnlyOffice handles one command at a time.
+  var queue = Promise.resolve();
+  function enqueue(fn) {
+    var p = queue.then(fn, fn);
+    queue = p.catch(function () {});
+    return p;
+  }
+
+  // Runs `code` (the source of a JS function) inside the editor with the
+  // Document Builder API (`Api`). `scope` is exposed as `Asc.scope`.
+  function runCommand(code, scope, recalc) {
+    return enqueue(function () {
+      return new Promise(function (resolve, reject) {
+        if (!(window.Asc && window.Asc.plugin && window.Asc.plugin.callCommand)) {
+          reject(new Error('Not running inside an OnlyOffice editor'));
+          return;
+        }
+        window.Asc.scope = scope || {};
+        var wrapped =
+          'function () {' +
+          '  try {' +
+          '    var __r = (' + code + ')();' +
+          '    return JSON.stringify({ ok: true, value: __r === undefined ? null : __r });' +
+          '  } catch (e) {' +
+          '    return JSON.stringify({ ok: false, error: String((e && e.message) || e) });' +
+          '  }' +
+          '}';
+        window.Asc.plugin.callCommand(wrapped, false, recalc !== false, function (res) {
+          if (typeof res !== 'string') { resolve(res === undefined ? null : res); return; }
+          var out;
+          try { out = JSON.parse(res); } catch (e) { resolve(res); return; }
+          if (out && out.ok === false) reject(new Error(out.error));
+          else resolve(out ? out.value : null);
+        });
+      });
+    });
+  }
+
+  function executeMethod(name, args) {
+    return enqueue(function () {
+      return new Promise(function (resolve, reject) {
+        if (!(window.Asc && window.Asc.plugin && window.Asc.plugin.executeMethod)) {
+          reject(new Error('Not running inside an OnlyOffice editor'));
+          return;
+        }
+        window.Asc.plugin.executeMethod(name, args || [], function (res) {
+          resolve(res === undefined ? null : res);
+        });
+      });
+    });
+  }
+
+  // The plugin stays generic on purpose: every document action is written in
+  // the local server and sent here as code, so new actions never require a
+  // plugin update.
   var handlers = {
     ping: function () {
       return Promise.resolve({ pong: true, at: Date.now() });
@@ -88,39 +145,15 @@
     get_info: function () {
       return Promise.resolve(docInfo());
     },
-    get_selected_text: function () {
-      return executeMethod('GetSelectedText', [{
-        Numbering: false, Math: false,
-        TableCellSeparator: '\n', ParaSeparator: '\n', TabSymbol: '\t'
-      }]).then(function (text) { return { text: text || '' }; });
+    run_command: function (params) {
+      if (!params.code) return Promise.reject(new Error('Missing "code"'));
+      return runCommand(String(params.code), params.scope, params.recalc);
     },
-    // Inserts text at the cursor; each line becomes a paragraph.
-    insert_text: function (params) {
-      var text = String(params.text || '');
-      if (!text) return Promise.reject(new Error('Missing "text"'));
-      window.Asc.scope.paragraphs = text.split(/\r?\n/);
-      return callCommand(function () {
-        var doc = Api.GetDocument();
-        var content = Asc.scope.paragraphs.map(function (line) {
-          var p = Api.CreateParagraph();
-          p.AddText(line);
-          return p;
-        });
-        doc.InsertContent(content);
-        return content.length;
-      }).then(function (count) { return { inserted: count }; });
+    execute_method: function (params) {
+      if (!params.name) return Promise.reject(new Error('Missing "name"'));
+      return executeMethod(String(params.name), params.args || []);
     }
   };
-
-  function callCommand(fn) {
-    return new Promise(function (resolve, reject) {
-      if (!(window.Asc && window.Asc.plugin && window.Asc.plugin.callCommand)) {
-        reject(new Error('Not running inside an OnlyOffice editor'));
-        return;
-      }
-      window.Asc.plugin.callCommand(fn, false, true, function (res) { resolve(res); });
-    });
-  }
 
   function handleCommand(msg) {
     var h = handlers[msg.method];
