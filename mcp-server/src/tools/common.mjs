@@ -84,6 +84,20 @@ export const commonTools = [
   },
 
   {
+    name: 'list_fonts',
+    title: 'List available fonts',
+    description: 'List the font names available in the editor (to check a font exists before applying it). Optionally filter by a substring.',
+    schema: { ...documentArg, filter: z.string().optional() },
+    readOnly: true,
+    run: async (b, c, a) => {
+      const list = (await b.method(c, 'GetFontList', [])) || [];
+      let names = [...new Set(list.map((f) => f.m_wsFontName || f.name).filter(Boolean))].sort((x, y) => x.localeCompare(y));
+      if (a.filter) names = names.filter((n) => n.toLowerCase().includes(a.filter.toLowerCase()));
+      return { count: names.length, fonts: names };
+    },
+  },
+
+  {
     name: 'run_script',
     title: 'Run an OnlyOffice API script',
     description: [

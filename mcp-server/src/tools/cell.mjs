@@ -117,7 +117,7 @@ export const cellTools = [
   {
     name: 'cell_format_range',
     title: 'Format cells',
-    description: 'Format a range: font (bold, italic, underline, size, color), fill color, number format (e.g. "0.00", "#,##0 €", "dd/mm/yyyy", "0%"), alignment, wrap, merge, column width, autofit.',
+    description: 'Format a range: font (name, size, color, bold, italic, underline), fill color, borders, number format (e.g. "0.00", "#,##0 €", "dd/mm/yyyy", "0%"), horizontal/vertical alignment, wrap, merge, column width, row height, autofit.',
     schema: {
       ...documentArg,
       ...sheetArg,
@@ -125,11 +125,17 @@ export const cellTools = [
       bold: z.boolean().optional(),
       italic: z.boolean().optional(),
       underline: z.boolean().optional(),
+      font_family: z.string().optional().describe('Font name, e.g. "Inter".'),
       font_size: z.number().positive().optional().describe('In points.'),
       font_color: z.string().optional().describe('#RRGGBB'),
       fill_color: z.string().optional().describe('#RRGGBB, or "none" to clear.'),
       number_format: z.string().optional(),
       align: z.enum(['left', 'center', 'right', 'justify']).optional(),
+      valign: z.enum(['top', 'center', 'bottom']).optional(),
+      borders: z.enum(['all', 'outline', 'bottom', 'none']).optional().describe('"all" = every cell edge, "outline" = around the range.'),
+      border_style: z.enum(['Thin', 'Medium', 'Thick', 'Dashed', 'Dotted', 'Double', 'Hair']).optional().describe('Default Thin.'),
+      border_color: z.string().optional().describe('#RRGGBB, default black.'),
+      row_height: z.number().positive().optional().describe('Row height in points for the rows of the range.'),
       wrap: z.boolean().optional(),
       merge: z.boolean().optional(),
       column_width: z.number().positive().optional().describe('Width in characters for the columns of the range.'),
@@ -144,12 +150,23 @@ export const cellTools = [
       if (s.bold !== undefined) r.SetBold(s.bold);
       if (s.italic !== undefined) r.SetItalic(s.italic);
       if (s.underline !== undefined) r.SetUnderline(s.underline ? 'single' : 'none');
+      if (s.font_family) r.SetFontName(s.font_family);
       if (s.font_size) r.SetFontSize(s.font_size);
       if (s.fontRgb) r.SetFontColor(Api.CreateColorFromRGB(s.fontRgb[0], s.fontRgb[1], s.fontRgb[2]));
       if (s.fill_color === 'none') r.SetFillColor(null);
       else if (s.fillRgb) r.SetFillColor(Api.CreateColorFromRGB(s.fillRgb[0], s.fillRgb[1], s.fillRgb[2]));
       if (s.number_format) r.SetNumberFormat(s.number_format);
       if (s.align) r.SetAlignHorizontal(s.align);
+      if (s.valign) r.SetAlignVertical(s.valign);
+      if (s.borders) {
+        var bc = s.borderRgb ? Api.CreateColorFromRGB(s.borderRgb[0], s.borderRgb[1], s.borderRgb[2]) : Api.CreateColorFromRGB(0, 0, 0);
+        var style = s.borders === 'none' ? 'None' : (s.border_style || 'Thin');
+        var edges = { all: ['Top', 'Bottom', 'Left', 'Right', 'InsideHorizontal', 'InsideVertical'],
+          none: ['Top', 'Bottom', 'Left', 'Right', 'InsideHorizontal', 'InsideVertical'],
+          outline: ['Top', 'Bottom', 'Left', 'Right'], bottom: ['Bottom'] }[s.borders];
+        edges.forEach(function (e) { r.SetBorders(e, style, bc); });
+      }
+      if (s.row_height) r.SetRowHeight(s.row_height);
       if (s.wrap !== undefined) r.SetWrap(s.wrap);
       if (s.merge === true) r.Merge(false);
       if (s.merge === false) r.UnMerge();
@@ -160,6 +177,7 @@ export const cellTools = [
       ...a,
       fontRgb: a.font_color ? hexToRgb(a.font_color) : undefined,
       fillRgb: a.fill_color && a.fill_color !== 'none' ? hexToRgb(a.fill_color) : undefined,
+      borderRgb: a.border_color ? hexToRgb(a.border_color) : undefined,
     }),
   },
 

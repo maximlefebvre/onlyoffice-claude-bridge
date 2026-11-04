@@ -13,10 +13,12 @@ const boxSchema = {
 };
 
 const textStyleSchema = {
+  font_family: z.string().optional().describe('Font name, e.g. "Inter".'),
   font_size: z.number().positive().optional().describe('In points.'),
   bold: z.boolean().optional(),
   color: z.string().optional().describe('#RRGGBB'),
   align: z.enum(['left', 'center', 'right', 'both']).optional(),
+  line_spacing: z.number().positive().max(10).optional().describe('Multiple, e.g. 1.2.'),
 };
 
 export const slideTools = [
@@ -135,6 +137,8 @@ export const slideTools = [
         if (s.bold !== undefined) p.SetBold(s.bold);
         if (s.rgb) p.SetColor(s.rgb[0], s.rgb[1], s.rgb[2]);
         if (s.align) p.SetJc(s.align);
+        if (s.font_family) p.SetFontFamily(s.font_family);
+        if (s.line_spacing) p.SetSpacingLine(Math.round(s.line_spacing * 240), 'auto');
         dc.Push(p);
       });
       return { updated: { slide: s.slide, shape: s.shape } };
@@ -171,6 +175,8 @@ export const slideTools = [
         if (s.bold) p.SetBold(true);
         if (s.rgb) p.SetColor(s.rgb[0], s.rgb[1], s.rgb[2]);
         if (s.align) p.SetJc(s.align);
+        if (s.font_family) p.SetFontFamily(s.font_family);
+        if (s.line_spacing) p.SetSpacingLine(Math.round(s.line_spacing * 240), 'auto');
         dc.Push(p);
       });
       slide.AddObject(sh);
@@ -180,6 +186,53 @@ export const slideTools = [
       rgb: a.color ? hexToRgb(a.color) : undefined,
       fillRgb: a.fill ? hexToRgb(a.fill) : undefined,
     }),
+  },
+
+  {
+    name: 'slide_format_text',
+    title: 'Format text on slides',
+    description:
+      'Change the text formatting (font, size, color, bold, italic, alignment, line spacing) of one shape, of every shape on a slide, or of every shape in the presentation (all=true). Text content is kept.',
+    schema: {
+      ...documentArg,
+      all: z.boolean().optional().describe('Every shape on every slide.'),
+      slide: z.number().int().min(0).optional(),
+      shape: z.number().int().min(0).optional().describe('Omit to format every shape of the slide.'),
+      italic: z.boolean().optional(),
+      ...textStyleSchema,
+    },
+    run: (b, c, a) => b.run(c, function () {
+      var s = Asc.scope, pres = Api.GetPresentation(), shapes = [];
+      if (s.all) {
+        for (var i = 0; i < pres.GetSlidesCount(); i++) shapes = shapes.concat(pres.GetSlideByIndex(i).GetAllShapes() || []);
+      } else {
+        if (s.slide === undefined || s.slide === null) throw new Error('Pass all=true or a slide index');
+        var slide = pres.GetSlideByIndex(s.slide);
+        if (!slide) throw new Error('No slide at index ' + s.slide);
+        var list = slide.GetAllShapes() || [];
+        if (s.shape !== undefined && s.shape !== null) {
+          if (!list[s.shape]) throw new Error('No shape at index ' + s.shape + ' on slide ' + s.slide);
+          shapes = [list[s.shape]];
+        } else shapes = list;
+      }
+      var count = 0;
+      shapes.forEach(function (sh) {
+        var dc = null;
+        try { dc = sh.GetDocContent(); } catch (e) {}
+        if (!dc) return;
+        dc.GetAllParagraphs().forEach(function (p) {
+          if (s.font_family) p.SetFontFamily(s.font_family);
+          if (s.font_size) p.SetFontSize(Math.round(s.font_size * 2));
+          if (s.rgb) p.SetColor(s.rgb[0], s.rgb[1], s.rgb[2]);
+          if (s.bold !== undefined) p.SetBold(s.bold);
+          if (s.italic !== undefined) p.SetItalic(s.italic);
+          if (s.align) p.SetJc(s.align);
+          if (s.line_spacing) p.SetSpacingLine(Math.round(s.line_spacing * 240), 'auto');
+          count++;
+        });
+      });
+      return { shapes: shapes.length, paragraphs: count };
+    }, { ...a, rgb: a.color ? hexToRgb(a.color) : undefined }),
   },
 
   {

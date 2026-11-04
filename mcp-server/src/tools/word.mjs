@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { hexToRgb, positionSchema, documentArg } from './shared.mjs';
 
 const targetSchema = {
+  all: z.boolean().optional().describe('Apply to the whole document (takes precedence over search and paragraph).'),
   search: z.string().optional().describe('Apply to every occurrence of this text (takes precedence over paragraph).'),
   match_case: z.boolean().optional().describe('Case-sensitive search (default false).'),
   paragraph: z.number().int().min(0).optional().describe('Apply to the paragraph at this index (from word_read_document).'),
@@ -166,7 +167,7 @@ export const wordTools = [
     name: 'word_format_text',
     title: 'Format text',
     description:
-      'Apply character formatting (bold, italic, underline, strikeout, size, font, color, highlight) and/or paragraph alignment to the current selection (default), to a paragraph index, or to every occurrence of a text.',
+      'Apply character formatting (font, size, color, highlight, bold, italic, underline, strikeout, caps) and/or alignment to the whole document (all=true), every occurrence of a text, a paragraph index, or the current selection (default). For document-wide consistency, word_modify_style is often better.',
     schema: {
       ...documentArg,
       ...targetSchema,
@@ -177,12 +178,20 @@ export const wordTools = [
       font_size: z.number().positive().optional().describe('In points.'),
       font_family: z.string().optional(),
       color: z.string().optional().describe('Text color as #RRGGBB.'),
+      caps: z.boolean().optional().describe('ALL CAPS display.'),
+      small_caps: z.boolean().optional(),
       highlight: z.enum(['yellow', 'green', 'cyan', 'magenta', 'blue', 'red', 'darkBlue', 'darkCyan', 'darkGreen', 'darkMagenta', 'darkRed', 'darkYellow', 'darkGray', 'lightGray', 'black', 'none']).optional(),
       align: z.enum(['left', 'center', 'right', 'both']).optional().describe('Paragraph alignment ("both" = justified).'),
     },
     run: (b, c, a) => b.run(c, function () {
       var s = Asc.scope, doc = Api.GetDocument(), ranges;
-      if (s.search) {
+      if (s.all) {
+        ranges = [doc.GetRange()];
+        for (var i = 0; i < doc.GetElementsCount(); i++) {
+          var e = doc.GetElement(i);
+          if (e.GetClassType() === 'table') ranges.push(e.GetRange());
+        }
+      } else if (s.search) {
         ranges = doc.Search(s.search, !!s.match_case) || [];
       } else if (s.paragraph !== undefined && s.paragraph !== null) {
         var el = doc.GetElement(s.paragraph);
@@ -202,9 +211,116 @@ export const wordTools = [
         if (s.font_family) r.SetFontFamily(s.font_family);
         if (s.rgb) r.SetColor(s.rgb[0], s.rgb[1], s.rgb[2]);
         if (s.highlight) r.SetHighlight(s.highlight);
+        if (s.caps !== undefined) r.SetCaps(s.caps);
+        if (s.small_caps !== undefined) r.SetSmallCaps(s.small_caps);
         if (s.align) r.GetAllParagraphs().forEach(function (p) { p.SetJc(s.align); });
       });
       return { formatted: ranges.length };
+    }, { ...a, rgb: a.color ? hexToRgb(a.color) : undefined }),
+  },
+
+  {
+    name: 'word_format_paragraphs',
+    title: 'Format paragraphs (spacing, indents, alignment)',
+    description:
+      'Set paragraph layout: alignment, line spacing (multiple such as 1, 1.15, 1.5, 2, or an exact height in points), space before/after, left/right/first-line indents (negative first line = hanging indent), background color, keep with next. Targets: all paragraphs (all=true), paragraph indexes, or the paragraphs of the current selection (default).',
+    schema: {
+      ...documentArg,
+      all: z.boolean().optional(),
+      indexes: z.array(z.number().int().min(0)).optional().describe('Paragraph indexes from word_read_document.'),
+      align: z.enum(['left', 'center', 'right', 'both']).optional().describe('"both" = justified.'),
+      line_spacing: z.number().positive().max(10).optional().describe('Multiple of single line spacing, e.g. 1.15 or 1.5.'),
+      line_spacing_pt: z.number().positive().optional().describe('Exact line height in points (overrides line_spacing).'),
+      space_before_pt: z.number().min(0).optional(),
+      space_after_pt: z.number().min(0).optional(),
+      indent_left_cm: z.number().optional(),
+      indent_right_cm: z.number().optional(),
+      first_line_cm: z.number().optional().describe('First-line indent; negative for a hanging indent.'),
+      background: z.string().optional().describe('Paragraph background #RRGGBB, or "none".'),
+      keep_with_next: z.boolean().optional(),
+    },
+    run: (b, c, a) => b.run(c, function () {
+      var s = Asc.scope, doc = Api.GetDocument(), paras = [];
+      if (s.all) paras = doc.GetAllParagraphs();
+      else if (s.indexes && s.indexes.length) {
+        s.indexes.forEach(function (i) {
+          var el = doc.GetElement(i);
+          if (!el || el.GetClassType() !== 'paragraph') throw new Error('No paragraph at index ' + i);
+          paras.push(el);
+        });
+      } else {
+        var sel = doc.GetRangeBySelect();
+        if (!sel) throw new Error('Nothing is selected: pass all=true or indexes');
+        paras = sel.GetAllParagraphs();
+      }
+      var TW_PT = 20, TW_CM = 567;
+      paras.forEach(function (p) {
+        if (s.align) p.SetJc(s.align);
+        if (s.line_spacing_pt) p.SetSpacingLine(Math.round(s.line_spacing_pt * TW_PT), 'exact');
+        else if (s.line_spacing) p.SetSpacingLine(Math.round(s.line_spacing * 240), 'auto');
+        if (s.space_before_pt !== undefined) p.SetSpacingBefore(Math.round(s.space_before_pt * TW_PT));
+        if (s.space_after_pt !== undefined) p.SetSpacingAfter(Math.round(s.space_after_pt * TW_PT));
+        if (s.indent_left_cm !== undefined) p.SetIndLeft(Math.round(s.indent_left_cm * TW_CM));
+        if (s.indent_right_cm !== undefined) p.SetIndRight(Math.round(s.indent_right_cm * TW_CM));
+        if (s.first_line_cm !== undefined) p.SetIndFirstLine(Math.round(s.first_line_cm * TW_CM));
+        if (s.background === 'none') p.SetShd('nil', 255, 255, 255);
+        else if (s.bg) p.SetShd('clear', s.bg[0], s.bg[1], s.bg[2]);
+        if (s.keep_with_next !== undefined) p.SetKeepNext(s.keep_with_next);
+      });
+      return { formatted: paras.length };
+    }, { ...a, bg: a.background && a.background !== 'none' ? hexToRgb(a.background) : undefined }),
+  },
+
+  {
+    name: 'word_list_styles',
+    title: 'List styles',
+    description: 'List the styles available in the text document (name and type: paragraph, character, table, numbering).',
+    schema: { ...documentArg },
+    readOnly: true,
+    run: (b, c) => b.run(c, function () {
+      return (Api.GetDocument().GetAllStyles() || []).map(function (st) {
+        var o = { name: st.GetName() };
+        try { o.type = st.GetType(); } catch (e) {}
+        return o;
+      });
+    }, {}, false),
+  },
+
+  {
+    name: 'word_modify_style',
+    title: 'Modify a style',
+    description:
+      'Change the definition of a style (e.g. "Normal", "Heading 1", "Title"), so every paragraph using it updates at once: font, size, color, bold, italic, alignment, line spacing, space before/after. Changing "Normal" restyles most of the document.',
+    schema: {
+      ...documentArg,
+      style: z.string(),
+      font_family: z.string().optional(),
+      font_size: z.number().positive().optional().describe('In points.'),
+      color: z.string().optional().describe('#RRGGBB'),
+      bold: z.boolean().optional(),
+      italic: z.boolean().optional(),
+      align: z.enum(['left', 'center', 'right', 'both']).optional(),
+      line_spacing: z.number().positive().max(10).optional().describe('Multiple, e.g. 1.15.'),
+      space_before_pt: z.number().min(0).optional(),
+      space_after_pt: z.number().min(0).optional(),
+    },
+    run: (b, c, a) => b.run(c, function () {
+      var s = Asc.scope, st = Api.GetDocument().GetStyle(s.style);
+      if (!st) throw new Error('Unknown style: ' + s.style + ' (see word_list_styles)');
+      var t = st.GetTextPr();
+      if (s.font_family) t.SetFontFamily(s.font_family);
+      if (s.font_size) t.SetFontSize(Math.round(s.font_size * 2));
+      if (s.rgb) t.SetColor(s.rgb[0], s.rgb[1], s.rgb[2]);
+      if (s.bold !== undefined) t.SetBold(s.bold);
+      if (s.italic !== undefined) t.SetItalic(s.italic);
+      var p = st.GetParaPr();
+      if (p) {
+        if (s.align) p.SetJc(s.align);
+        if (s.line_spacing) p.SetSpacingLine(Math.round(s.line_spacing * 240), 'auto');
+        if (s.space_before_pt !== undefined) p.SetSpacingBefore(Math.round(s.space_before_pt * 20));
+        if (s.space_after_pt !== undefined) p.SetSpacingAfter(Math.round(s.space_after_pt * 20));
+      }
+      return { modified: s.style };
     }, { ...a, rgb: a.color ? hexToRgb(a.color) : undefined }),
   },
 
