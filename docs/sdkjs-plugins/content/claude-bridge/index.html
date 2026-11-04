@@ -15,11 +15,13 @@
       <span id="status">Disconnected</span>
     </div>
 
-    <label class="cb-label" for="port">Local port</label>
-    <input id="port" class="form-control" type="number" value="47615">
-
-    <label class="cb-label" for="token">Token</label>
-    <input id="token" class="form-control" type="password" placeholder="Paste the server token" autocomplete="off">
+    <details class="cb-advanced">
+      <summary>Advanced</summary>
+      <label class="cb-label" for="port">Local port</label>
+      <input id="port" class="form-control" type="number" value="47615">
+      <label class="cb-label" for="token">Token</label>
+      <input id="token" class="form-control" type="password" placeholder="Set automatically after approval" autocomplete="off">
+    </details>
 
     <div class="cb-actions">
       <button id="connect" class="btn-text-default">Connect</button>
@@ -29,6 +31,6 @@
     <div class="cb-label">Log</div>
     <div id="log" class="cb-log"></div>
   </div>
-  <script src="plugin.js?v=0.2.0"></script>
+  <script src="plugin.js?v=0.3.0"></script>
 </body>
 </html>

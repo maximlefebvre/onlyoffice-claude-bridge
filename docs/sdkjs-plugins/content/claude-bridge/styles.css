@@ -8,3 +8,6 @@
 .cb-actions { display: flex; gap: 6px; margin-top: 8px; }
 .cb-log { font-family: ui-monospace, Menlo, monospace; font-size: 11px; max-height: 180px; overflow-y: auto;
   border: 1px solid rgba(128,128,128,.35); border-radius: 3px; padding: 6px; white-space: pre-wrap; word-break: break-word; }
+.cb-advanced { margin-top: 4px; }
+.cb-advanced summary { cursor: pointer; opacity: .8; }
+.cb-advanced[open] { display: flex; flex-direction: column; gap: 6px; }

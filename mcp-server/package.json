@@ -1,6 +1,6 @@
 {
   "name": "onlyoffice-claude-bridge-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "MCP server that lets Claude edit the document open in OnlyOffice through the Claude Bridge plugin.",

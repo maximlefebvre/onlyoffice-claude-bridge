@@ -5,8 +5,10 @@
  * it sends against the open document.
  *
  * Protocol (JSON):
- *   plugin -> server : { type: "hello", token, info }
- *   server -> plugin : { type: "welcome" }             (otherwise the connection is closed)
+ *   plugin -> server : { type: "hello", token?, info }
+ *   server -> plugin : { type: "pending" }             (unknown browser: the user is asked to approve)
+ *   server -> plugin : { type: "welcome", token? }     (token: issued on first approval, stored here)
+ *   server closes with 4003 when the user denies the connection.
  *   server -> plugin : { id, method, params }
  *   plugin -> server : { id, result } | { id, error }
  *
@@ -15,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var PLUGIN_VERSION = '0.2.0';
+  var PLUGIN_VERSION = '0.3.0';
   var STORAGE_KEY = 'claude-bridge-settings';
 
   var ws = null;
@@ -184,7 +186,7 @@
     clearTimeout(retryTimer);
     var port = parseInt($('port').value, 10);
     var token = $('token').value.trim();
-    if (!port || !token) { setStatus('off', 'Port and token required'); return; }
+    if (!port) { setStatus('off', 'Invalid port'); return; }
     wantConnected = true;
     saveSettings();
 
@@ -205,15 +207,25 @@
     var sock = ws;
 
     sock.onopen = function () {
-      send({ type: 'hello', token: token, info: docInfo() });
+      send({ type: 'hello', token: token || null, info: docInfo() });
     };
 
     sock.onmessage = function (ev) {
       var msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (msg.type === 'pending') {
+        setStatus('wait', 'Approve the connection on your computer…');
+        log('Waiting for approval (a dialog should be open on your computer)');
+        return;
+      }
       if (msg.type === 'welcome') {
         welcomed = true;
         retryDelay = 1000;
+        if (msg.token) {
+          $('token').value = msg.token;
+          saveSettings();
+          log('Approved: this browser is now paired');
+        }
         setStatus('on', 'Connected to Claude');
         log('Connected (' + url + ')');
         return;
@@ -223,16 +235,17 @@
     };
 
     sock.onerror = function () {
-      log('WebSocket error (is the server running? is the browser blocking localhost?)');
+      if (!welcomed) setStatus('wait', 'Waiting for Claude…');
+      log('Cannot reach the local server (is Claude running with the bridge? is the browser blocking localhost?)');
     };
 
     sock.onclose = function (ev) {
       if (sock !== ws) return;
       ws = null;
-      if (ev.code === 4001) {
+      if (ev.code === 4003) {
         wantConnected = false;
-        setStatus('off', 'Token rejected');
-        log('Token rejected by the server');
+        setStatus('off', 'Connection denied');
+        log('The connection was denied on your computer. Click Connect to ask again.');
         return;
       }
       setStatus(wantConnected ? 'wait' : 'off', wantConnected ? 'Reconnecting…' : 'Disconnected');
@@ -252,8 +265,8 @@
   function start() {
     $('connect').onclick = connect;
     $('disconnect').onclick = disconnect;
-    var s = loadSettings();
-    if (s.token) connect();
+    loadSettings();
+    connect(); // connects (or asks for approval) automatically
   }
 
   var started = false;

@@ -15,6 +15,50 @@ export const commonTools = [
   },
 
   {
+    name: 'list_connection_requests',
+    title: 'List connection requests',
+    description: 'List plugins waiting for the user\'s approval to connect (used when no approval dialog can be shown on this computer). Always ask the user before approving.',
+    schema: {},
+    readOnly: true,
+    noDocument: true,
+    run: (b) => b.listPairingRequests(),
+  },
+
+  {
+    name: 'approve_connection',
+    title: 'Approve or deny a connection request',
+    description: 'Approve or deny a pending plugin connection request. Only call this after the user explicitly said yes (or no) for this request in the conversation.',
+    schema: {
+      id: z.number().int().describe('Request id from list_connection_requests.'),
+      allow: z.boolean(),
+    },
+    noDocument: true,
+    run: (b, _c, a) => {
+      if (!b.decidePairing(a.id, a.allow)) throw new Error(`No pending connection request #${a.id}`);
+      return { id: a.id, allowed: a.allow };
+    },
+  },
+
+  {
+    name: 'manage_paired_browsers',
+    title: 'List or revoke paired browsers',
+    description: 'List the browsers allowed to connect (each approval pairs one browser profile), or revoke one so it must be approved again.',
+    schema: {
+      revoke: z.number().int().optional().describe('Id of the pairing to revoke.'),
+    },
+    noDocument: true,
+    destructive: true,
+    run: (b, _c, a) => {
+      if (a.revoke !== undefined) {
+        const removed = b.devices.remove(a.revoke);
+        if (!removed) throw new Error(`No pairing #${a.revoke}`);
+        return { revoked: a.revoke };
+      }
+      return b.devices.list();
+    },
+  },
+
+  {
     name: 'get_selection',
     title: 'Get selected text',
     description: 'Return the text the user has currently selected in a document, spreadsheet or presentation.',

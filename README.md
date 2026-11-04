@@ -42,14 +42,16 @@ Claude desktop app (`claude_desktop_config.json`):
 }
 ```
 
-The server listens on `ws://127.0.0.1:47615`. The token the plugin needs is in `~/.config/onlyoffice-claude-bridge/token` (created on first start).
+The server listens on `ws://127.0.0.1:47615`.
 
 Options (environment variables): `CLAUDE_BRIDGE_PORT`, `CLAUDE_BRIDGE_ALLOWED_ORIGINS` (default `https://maximlefebvre.github.io`), `CLAUDE_BRIDGE_TIMEOUT_MS`.
 
 ### 2. Install the plugin
 
 In the OnlyOffice editor: Plugins → Plugin Manager → `</>` (developer mode) → paste
-`https://maximlefebvre.github.io/onlyoffice-claude-bridge/store/index.html`, then install **Claude Bridge**. Open its panel, paste the token and click **Connect**.
+`https://maximlefebvre.github.io/onlyoffice-claude-bridge/store/index.html`, then install **Claude Bridge** and open its panel. It connects by itself.
+
+The first time a browser connects, the server asks you to approve it: a dialog on macOS, or Claude asks you in the conversation on other systems. The plugin then receives its own token and reconnects silently afterwards. Approved browsers are listed in `~/.config/onlyoffice-claude-bridge/devices.json` (hashed tokens) and can be revoked with the `manage_paired_browsers` tool. A manual token (`~/.config/onlyoffice-claude-bridge/token`) can still be pasted under **Advanced** in the panel.
 
 ### 3. Firefox only: allow the local connection
 
@@ -60,6 +62,7 @@ Since Firefox 151, a plugin frame cannot reach `127.0.0.1` by default and no per
 | Scope | Tools |
 | --- | --- |
 | All | `list_documents`, `get_selection`, `replace_selection`, `run_script`, `execute_method` |
+| Connections | `list_connection_requests`, `approve_connection`, `manage_paired_browsers` |
 | Text documents | `word_read_document`, `word_insert_paragraphs`, `word_replace_paragraph`, `word_delete_elements`, `word_search_replace`, `word_format_text`, `word_set_style`, `word_add_comment`, `word_list_comments`, `word_insert_table`, `word_set_track_changes` |
 | Spreadsheets | `cell_list_sheets`, `cell_read_range`, `cell_write_range`, `cell_get_selection`, `cell_format_range`, `cell_clear_range`, `cell_insert_cells`, `cell_delete_cells`, `cell_manage_sheet`, `cell_add_comment` |
 | Presentations | `slide_list`, `slide_add`, `slide_manage`, `slide_set_text`, `slide_add_text_box`, `slide_edit_shape`, `slide_set_notes` |

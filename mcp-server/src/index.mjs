@@ -18,7 +18,7 @@ import { wordTools } from './tools/word.mjs';
 import { cellTools } from './tools/cell.mjs';
 import { slideTools } from './tools/slide.mjs';
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const port = parseInt(process.env.CLAUDE_BRIDGE_PORT || '47615', 10);
 const allowedOrigins = (process.env.CLAUDE_BRIDGE_ALLOWED_ORIGINS || 'https://maximlefebvre.github.io')
   .split(',').map((s) => s.trim()).filter(Boolean);
@@ -42,6 +42,7 @@ const server = new McpServer(
       'Read before editing (word_read_document, cell_read_range, slide_list) and use the indexes they return.',
       'Edits are applied immediately in the user\'s document and can be undone with Ctrl/Cmd+Z in the editor. For substantial rewrites of a text document, consider word_set_track_changes so the user can review.',
       'If no document is connected, ask the user to open the Claude Bridge panel in the editor and click Connect.',
+      'The first time a browser connects, the user approves it in a dialog on their computer. If list_connection_requests shows a pending request (no dialog available), ask the user and only call approve_connection with their explicit answer.',
     ].join(' '),
   },
 );
