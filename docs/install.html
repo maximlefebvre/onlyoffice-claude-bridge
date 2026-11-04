@@ -59,12 +59,13 @@
   </div>
 
   <div class="card" id="browser">
-    <h2>3. Allow your browser to reach Claude</h2>
-    <p>With a Claude session running, open <a href="connect.html"><b>this page</b></a> and click <b>Test connection</b>. If your browser asks whether the site may access apps on this device, tick <b>Remember</b> and <b>Allow</b>.</p>
-    <p>The permission is given to the plugin's site only, not to other websites.</p>
+    <h2>3. Check your browser</h2>
+    <p>With a Claude session running, open <a href="connect.html"><b>the connection test</b></a> and click <b>Test connection</b>. Then check the notes for your browser below.</p>
     <h3 id="browsers">Browser notes</h3>
     <table>
-      <tr><th>Firefox</th><td>Needed since version 151. The editor runs the plugin in a frame where Firefox cannot ask, so allow it once from the page above.</td></tr>
+      <tr><th>Firefox</th><td>Since version 151, Firefox blocks the plugin frame from reaching <code class="inline">127.0.0.1</code> without asking, and a permission given to the site in a normal tab does not apply inside the editor.
+      Workaround for now: in <code class="inline">about:config</code>, add <code class="inline">127.0.0.1</code> to <code class="inline">network.lna.skip-domains</code>.
+      Be aware that this lets <b>any</b> website send requests to services running on your computer; avoid it if you run local servers without authentication. A browser extension that removes this step is planned.</td></tr>
       <tr><th>Chrome, Edge</th><td>Not tested yet. Chrome has a similar protection; if the panel cannot connect, please <a href="https://github.com/maximlefebvre/onlyoffice-claude-bridge/issues">open an issue</a>.</td></tr>
       <tr><th>Safari</th><td>Not tested yet.</td></tr>
     </table>

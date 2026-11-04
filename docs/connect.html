@@ -3,17 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Allow Claude Bridge</title>
+  <title>Test Claude Bridge</title>
   <link rel="stylesheet" href="site.css">
 </head>
 <body>
 <main>
   <p class="crumbs"><a href="./">OnlyOffice Claude Bridge</a> › <a href="install.html">Install guide</a></p>
-  <h1>Allow this site to reach Claude</h1>
+  <h1>Test the connection to Claude</h1>
   <p class="lead">
     The Claude Bridge plugin talks to a small server running on your computer (<b>127.0.0.1</b>).
-    Recent browsers block websites from reaching your computer unless you allow it, and they cannot ask inside the editor.
-    Allow it once here: the permission then applies to the plugin wherever you use it, and to no other website.
+    This page checks that the server is running and that your browser lets this site reach it.
   </p>
 
   <div class="card">
@@ -34,9 +33,8 @@
   </div>
 
   <p class="note">
-    The permission is stored for <b>maximlefebvre.github.io</b> only. Other websites stay blocked.
-    To remove it: click the site icon left of the address bar, or in Firefox open <b>Settings → Privacy &amp; Security → Permissions</b>.
-    If you previously added <code class="inline">127.0.0.1</code> to <code class="inline">network.lna.skip-domains</code> in <code class="inline">about:config</code>, you can now remove it.
+    <b>Firefox 151+:</b> a permission given here applies to this page only. Inside the editor, the plugin runs in a frame where Firefox neither asks nor applies it,
+    so the panel still needs the workaround described in the <a href="install.html#browsers">browser notes</a>.
   </p>
 </main>
 <script>
