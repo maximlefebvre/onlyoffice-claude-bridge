@@ -17,6 +17,7 @@ import { commonTools } from './tools/common.mjs';
 import { wordTools } from './tools/word.mjs';
 import { cellTools } from './tools/cell.mjs';
 import { slideTools } from './tools/slide.mjs';
+import { referenceTools } from './tools/reference.mjs';
 
 const VERSION = '0.3.0';
 const port = parseInt(process.env.CLAUDE_BRIDGE_PORT || '47615', 10);
@@ -40,6 +41,7 @@ const server = new McpServer(
       'These tools edit the documents the user has open in OnlyOffice (for example in kDrive), live, through the Claude Bridge plugin.',
       'Start with list_documents to see what is connected. Tools prefixed word_ work on text documents, cell_ on spreadsheets, slide_ on presentations.',
       'Read before editing (word_read_document, cell_read_range, slide_list) and use the indexes they return.',
+      'For anything the dedicated tools do not cover, look up the API with api_reference, then use run_script.',
       'Edits are applied immediately in the user\'s document and can be undone with Ctrl/Cmd+Z in the editor. For substantial rewrites of a text document, consider word_set_track_changes so the user can review.',
       'If no document is connected, ask the user to open the Claude Bridge panel in the editor and click Connect.',
       'The first time a browser connects, the user approves it in a dialog on their computer. If list_connection_requests shows a pending request (no dialog available), ask the user and only call approve_connection with their explicit answer.',
@@ -49,7 +51,7 @@ const server = new McpServer(
 
 const editorOf = { word_: 'word', cell_: 'cell', slide_: 'slide' };
 
-for (const tool of [...commonTools, ...wordTools, ...cellTools, ...slideTools]) {
+for (const tool of [...commonTools, ...referenceTools, ...wordTools, ...cellTools, ...slideTools]) {
   const editor = Object.entries(editorOf).find(([p]) => tool.name.startsWith(p))?.[1];
   server.registerTool(
     tool.name,

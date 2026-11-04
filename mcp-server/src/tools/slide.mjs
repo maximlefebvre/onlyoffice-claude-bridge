@@ -3,7 +3,7 @@
 // Positions and sizes are given in percent of the slide size.
 
 import { z } from 'zod';
-import { documentArg, hexToRgb } from './shared.mjs';
+import { documentArg, hexToRgb, imageSourceSchema, loadImage, imageExtent } from './shared.mjs';
 
 const boxSchema = {
   x: z.number().min(0).max(100).optional().describe('Left edge, % of slide width.'),
@@ -283,6 +283,85 @@ export const slideTools = [
         page.AddBodyShapeText(s.text);
       }
       return { notes: s.slide };
+    }, a),
+  },
+  {
+    name: 'slide_add_image',
+    title: 'Add image to slide',
+    description: 'Insert an image (URL, file on this computer, or data URL) on a slide. Position in % of the slide; size in % of slide width (aspect ratio kept). Default: centered, 50% wide.',
+    schema: {
+      ...documentArg,
+      slide: z.number().int().min(0),
+      source: imageSourceSchema,
+      x: z.number().min(0).max(100).optional(),
+      y: z.number().min(0).max(100).optional(),
+      width: z.number().min(1).max(100).optional().describe('% of slide width.'),
+    },
+    run: async (b, c, a) => {
+      const img = await loadImage(a.source);
+      const ratio = img.size && img.size.w ? img.size.h / img.size.w : 0.75;
+      return b.run(c, function () {
+        var s = Asc.scope, pres = Api.GetPresentation(), slide = pres.GetSlideByIndex(s.slide);
+        if (!slide) throw new Error('No slide at index ' + s.slide);
+        var W = pres.GetWidth(), H = pres.GetHeight();
+        var w = (s.width || 50) / 100 * W, h = w * s.ratio;
+        if (h > H) { h = H * 0.9; w = h / s.ratio; }
+        var x = s.x !== undefined && s.x !== null ? s.x / 100 * W : (W - w) / 2;
+        var y = s.y !== undefined && s.y !== null ? s.y / 100 * H : (H - h) / 2;
+        var im = Api.CreateImage(s.src, Math.round(w), Math.round(h));
+        im.SetPosition(Math.round(x), Math.round(y));
+        slide.AddObject(im);
+        return { image: true, slide: s.slide };
+      }, { slide: a.slide, src: img.dataUrl, ratio, x: a.x, y: a.y, width: a.width });
+    },
+  },
+
+  {
+    name: 'slide_set_background',
+    title: 'Slide background',
+    description: 'Set a solid background color on one slide or on every slide (all=true).',
+    schema: {
+      ...documentArg,
+      color: z.string().describe('#RRGGBB'),
+      slide: z.number().int().min(0).optional(),
+      all: z.boolean().optional(),
+    },
+    run: (b, c, a) => b.run(c, function () {
+      var s = Asc.scope, pres = Api.GetPresentation(), slides = [];
+      if (s.all) for (var i = 0; i < pres.GetSlidesCount(); i++) slides.push(pres.GetSlideByIndex(i));
+      else {
+        var sl = pres.GetSlideByIndex(s.slide);
+        if (!sl) throw new Error('No slide at index ' + s.slide);
+        slides.push(sl);
+      }
+      slides.forEach(function (sl) { sl.SetBackground(Api.CreateSolidFill(Api.CreateRGBColor(s.rgb[0], s.rgb[1], s.rgb[2]))); });
+      return { slides: slides.length };
+    }, { ...a, rgb: hexToRgb(a.color) }),
+  },
+
+  {
+    name: 'slide_set_bullets',
+    title: 'Bullets / numbering on slide text',
+    description: 'Add bullets ("•" or any symbol), numbering, or remove them, on the paragraphs of a shape.',
+    schema: {
+      ...documentArg,
+      slide: z.number().int().min(0),
+      shape: z.number().int().min(0),
+      style: z.enum(['bullet', 'numbered', 'none']),
+      symbol: z.string().optional().describe('Bullet character, default "•".'),
+    },
+    run: (b, c, a) => b.run(c, function () {
+      var s = Asc.scope, slide = Api.GetPresentation().GetSlideByIndex(s.slide);
+      if (!slide) throw new Error('No slide at index ' + s.slide);
+      var sh = (slide.GetAllShapes() || [])[s.shape];
+      if (!sh || !sh.GetDocContent()) throw new Error('No text shape at index ' + s.shape);
+      var paras = sh.GetDocContent().GetAllParagraphs();
+      paras.forEach(function (p, i) {
+        if (s.style === 'none') p.SetBullet(null);
+        else if (s.style === 'bullet') p.SetBullet(Api.CreateBullet(s.symbol || '•'));
+        else p.SetBullet(Api.CreateNumbering('ArabicPeriod', 1));
+      });
+      return { paragraphs: paras.length };
     }, a),
   },
 ];

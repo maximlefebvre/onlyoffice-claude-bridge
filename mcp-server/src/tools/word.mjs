@@ -5,7 +5,7 @@
 // the values passed through `Asc.scope`.
 
 import { z } from 'zod';
-import { hexToRgb, positionSchema, documentArg } from './shared.mjs';
+import { hexToRgb, positionSchema, documentArg, imageSourceSchema, loadImage, imageExtent } from './shared.mjs';
 
 const targetSchema = {
   all: z.boolean().optional().describe('Apply to the whole document (takes precedence over search and paragraph).'),
@@ -439,6 +439,227 @@ export const wordTools = [
     run: (b, c, a) => b.run(c, function () {
       Api.GetDocument().SetTrackRevisions(!!Asc.scope.enabled);
       return { trackChanges: !!Asc.scope.enabled };
+    }, a),
+  },
+  {
+    name: 'word_insert_image',
+    title: 'Insert image',
+    description: 'Insert an image (URL, file on this computer, or data URL) as its own paragraph, at the cursor, start, end, or before/after a paragraph index. Size in cm; the aspect ratio is kept when only one dimension is given (default width 10 cm).',
+    schema: {
+      ...documentArg,
+      source: imageSourceSchema,
+      width_cm: z.number().positive().optional(),
+      height_cm: z.number().positive().optional(),
+      align: z.enum(['left', 'center', 'right']).optional().describe('Default center.'),
+      position: positionSchema,
+      index: z.number().int().min(0).optional(),
+    },
+    run: async (b, c, a) => {
+      const img = await loadImage(a.source);
+      const { w, h } = imageExtent(img.size, a.width_cm, a.height_cm);
+      return b.run(c, function () {
+        var s = Asc.scope, doc = Api.GetDocument();
+        var p = Api.CreateParagraph();
+        p.AddDrawing(Api.CreateImage(s.src, s.w, s.h));
+        p.SetJc(s.align || 'center');
+        var pos = s.position || 'cursor';
+        if (pos === 'cursor') doc.InsertContent([p]);
+        else if (pos === 'end') doc.Push(p);
+        else if (pos === 'start') doc.AddElement(0, p);
+        else {
+          if (s.index === undefined || s.index === null) throw new Error('"index" is required for position ' + pos);
+          doc.AddElement(pos === 'before' ? s.index : s.index + 1, p);
+        }
+        return { inserted: true, width_cm: Math.round(s.w / 3600) / 100, height_cm: Math.round(s.h / 3600) / 100 };
+      }, { src: img.dataUrl, w, h, align: a.align, position: a.position, index: a.index });
+    },
+  },
+
+  {
+    name: 'word_set_list',
+    title: 'Bulleted / numbered list',
+    description: 'Turn paragraphs into a bulleted or numbered list (or remove list formatting with type "none"). Targets: paragraph indexes, or the paragraphs of the current selection (default). Consecutive paragraphs share one list.',
+    schema: {
+      ...documentArg,
+      type: z.enum(['bullet', 'numbered', 'none']),
+      indexes: z.array(z.number().int().min(0)).optional(),
+      level: z.number().int().min(0).max(8).optional().describe('Indent level, 0 = top (default).'),
+    },
+    run: (b, c, a) => b.run(c, function () {
+      var s = Asc.scope, doc = Api.GetDocument(), paras = [];
+      if (s.indexes && s.indexes.length) {
+        s.indexes.forEach(function (i) {
+          var el = doc.GetElement(i);
+          if (!el || el.GetClassType() !== 'paragraph') throw new Error('No paragraph at index ' + i);
+          paras.push(el);
+        });
+      } else {
+        var sel = doc.GetRangeBySelect();
+        if (!sel) throw new Error('Nothing is selected: pass indexes');
+        paras = sel.GetAllParagraphs();
+      }
+      var level = null;
+      if (s.type !== 'none') level = doc.CreateNumbering(s.type).GetLevel(s.level || 0);
+      paras.forEach(function (p) { p.SetNumbering(level); });
+      return { paragraphs: paras.length, type: s.type };
+    }, a),
+  },
+
+  {
+    name: 'word_set_header_footer',
+    title: 'Header / footer',
+    description: 'Set the header or footer text of every section (one paragraph per line), optionally with the page number ("Page 3") appended on the last line. type: default (all pages), title (first page), even (even pages).',
+    schema: {
+      ...documentArg,
+      which: z.enum(['header', 'footer']),
+      lines: z.array(z.string()).describe('Text lines; [] with page_number=true for a page number only.'),
+      page_number: z.boolean().optional().describe('Append the page number to the last line.'),
+      page_label: z.string().optional().describe('Text before the page number (default "Page ").'),
+      type: z.enum(['default', 'title', 'even']).optional(),
+      align: z.enum(['left', 'center', 'right']).optional(),
+    },
+    run: (b, c, a) => b.run(c, function () {
+      var s = Asc.scope, doc = Api.GetDocument(), sections = doc.GetSections() || [doc.GetFinalSection()];
+      sections.forEach(function (sec) {
+        var dc = s.which === 'header' ? sec.GetHeader(s.type || 'default', true) : sec.GetFooter(s.type || 'default', true);
+        if (!dc) throw new Error('Could not create the ' + s.which);
+        dc.RemoveAllElements();
+        var lines = s.lines.length ? s.lines.slice() : [''];
+        lines.forEach(function (t, i) {
+          var p = Api.CreateParagraph();
+          if (t) p.AddText(t);
+          if (s.page_number && i === lines.length - 1) {
+            p.AddText((t ? ' ' : '') + (s.page_label === undefined ? 'Page ' : s.page_label));
+            p.AddPageNumber();
+          }
+          if (s.align) p.SetJc(s.align);
+          dc.Push(p);
+        });
+      });
+      return { sections: sections.length, which: s.which };
+    }, a),
+  },
+
+  {
+    name: 'word_add_footnote',
+    title: 'Add footnote',
+    description: 'Add a footnote with the given text after the first occurrence of `search` (or at the current selection/cursor).',
+    schema: {
+      ...documentArg,
+      text: z.string().min(1),
+      search: z.string().optional(),
+      match_case: z.boolean().optional(),
+    },
+    run: (b, c, a) => b.run(c, function () {
+      var s = Asc.scope, doc = Api.GetDocument();
+      if (s.search) {
+        var found = doc.Search(s.search, !!s.match_case) || [];
+        if (!found.length) throw new Error('Text not found: ' + s.search);
+        found[0].Select();
+      }
+      var fn = doc.AddFootnote();
+      if (!fn) throw new Error('Could not add a footnote here');
+      var p = fn.GetElement(0);
+      p.AddText(s.text);
+      return { footnote: true };
+    }, a),
+  },
+
+  {
+    name: 'word_add_hyperlink',
+    title: 'Add hyperlink',
+    description: 'Turn the first occurrence of a text (all occurrences with all=true), or the current selection, into a link.',
+    schema: {
+      ...documentArg,
+      url: z.string().min(1),
+      search: z.string().optional(),
+      match_case: z.boolean().optional(),
+      all: z.boolean().optional(),
+      tooltip: z.string().optional(),
+    },
+    run: (b, c, a) => b.run(c, function () {
+      var s = Asc.scope, doc = Api.GetDocument(), ranges;
+      if (s.search) {
+        ranges = doc.Search(s.search, !!s.match_case) || [];
+        if (!ranges.length) throw new Error('Text not found: ' + s.search);
+        if (!s.all) ranges = ranges.slice(0, 1);
+      } else {
+        var sel = doc.GetRangeBySelect();
+        if (!sel) throw new Error('Nothing is selected: pass search');
+        ranges = [sel];
+      }
+      var n = 0;
+      ranges.forEach(function (r) { if (r.AddHyperlink(s.url, s.tooltip || s.url)) n++; });
+      return { links: n };
+    }, a),
+  },
+
+  {
+    name: 'word_page_setup',
+    title: 'Page size, orientation and margins',
+    description: 'Set page size (A4, A3, A5, Letter, Legal or custom cm), orientation and margins (cm) for every section.',
+    schema: {
+      ...documentArg,
+      size: z.enum(['A4', 'A3', 'A5', 'Letter', 'Legal']).optional(),
+      width_cm: z.number().positive().optional(),
+      height_cm: z.number().positive().optional(),
+      orientation: z.enum(['portrait', 'landscape']).optional(),
+      margin_top_cm: z.number().min(0).optional(),
+      margin_bottom_cm: z.number().min(0).optional(),
+      margin_left_cm: z.number().min(0).optional(),
+      margin_right_cm: z.number().min(0).optional(),
+    },
+    run: (b, c, a) => {
+      const sizes = { A4: [21, 29.7], A3: [29.7, 42], A5: [14.8, 21], Letter: [21.59, 27.94], Legal: [21.59, 35.56] };
+      let dims = a.size ? sizes[a.size] : (a.width_cm && a.height_cm ? [a.width_cm, a.height_cm] : null);
+      if (dims && a.orientation) {
+        const [x, y] = [Math.min(...dims), Math.max(...dims)];
+        dims = a.orientation === 'landscape' ? [y, x] : [x, y];
+      }
+      const cm = (v) => (v === undefined ? undefined : Math.round(v * 567));
+      return b.run(c, function () {
+        var s = Asc.scope, doc = Api.GetDocument(), sections = doc.GetSections() || [doc.GetFinalSection()];
+        sections.forEach(function (sec) {
+          if (s.dims) sec.SetPageSize(s.dims[0], s.dims[1], s.dims[1] >= s.dims[0]);
+          else if (s.orientation) {
+            var W = sec.GetPageWidth(), H = sec.GetPageHeight();
+            var lo = Math.min(W, H), hi = Math.max(W, H);
+            if (s.orientation === 'landscape') sec.SetPageSize(hi, lo, false); else sec.SetPageSize(lo, hi, true);
+          }
+          if (s.m.some(function (v) { return v !== null; })) {
+            var cur = [null, null, null, null];
+            try { cur = [sec.GetPageMarginLeft(), sec.GetPageMarginTop(), sec.GetPageMarginRight(), sec.GetPageMarginBottom()]; } catch (e) {}
+            sec.SetPageMargins(
+              s.m[0] !== null ? s.m[0] : (cur[0] || 1134), s.m[1] !== null ? s.m[1] : (cur[1] || 1134),
+              s.m[2] !== null ? s.m[2] : (cur[2] || 1134), s.m[3] !== null ? s.m[3] : (cur[3] || 1134));
+          }
+        });
+        return { sections: sections.length };
+      }, {
+        dims: dims ? dims.map((v) => Math.round(v * 567)) : null,
+        orientation: a.orientation,
+        m: [cm(a.margin_left_cm), cm(a.margin_top_cm), cm(a.margin_right_cm), cm(a.margin_bottom_cm)].map((v) => (v === undefined ? null : v)),
+      });
+    },
+  },
+
+  {
+    name: 'word_insert_page_break',
+    title: 'Insert page break',
+    description: 'Insert a page break at the cursor, at the end, or before/after a paragraph index.',
+    schema: { ...documentArg, position: positionSchema, index: z.number().int().min(0).optional() },
+    run: (b, c, a) => b.run(c, function () {
+      var s = Asc.scope, doc = Api.GetDocument(), p = Api.CreateParagraph();
+      p.AddPageBreak();
+      var pos = s.position || 'cursor';
+      if (pos === 'cursor') doc.InsertContent([p]);
+      else if (pos === 'end') doc.Push(p);
+      else if (pos === 'start') doc.AddElement(0, p);
+      else {
+        if (s.index === undefined || s.index === null) throw new Error('"index" is required for position ' + pos);
+        doc.AddElement(pos === 'before' ? s.index : s.index + 1, p);
+      }
+      return { pageBreak: true };
     }, a),
   },
 ];

@@ -61,12 +61,22 @@ Since Firefox 151, a plugin frame cannot reach `127.0.0.1` by default and no per
 
 | Scope | Tools |
 | --- | --- |
-| All | `list_documents`, `get_selection`, `replace_selection`, `list_fonts`, `run_script`, `execute_method` |
+| All | `list_documents`, `get_selection`, `replace_selection`, `list_fonts`, `api_reference`, `run_script`, `execute_method` |
 | Connections | `list_connection_requests`, `approve_connection`, `manage_paired_browsers` |
-| Text documents | `word_read_document`, `word_insert_paragraphs`, `word_replace_paragraph`, `word_delete_elements`, `word_search_replace`, `word_format_text`, `word_format_paragraphs`, `word_list_styles`, `word_modify_style`, `word_set_style`, `word_add_comment`, `word_list_comments`, `word_insert_table`, `word_set_track_changes` |
-| Spreadsheets | `cell_list_sheets`, `cell_read_range`, `cell_write_range`, `cell_get_selection`, `cell_format_range`, `cell_clear_range`, `cell_insert_cells`, `cell_delete_cells`, `cell_manage_sheet`, `cell_add_comment` |
-| Presentations | `slide_list`, `slide_add`, `slide_manage`, `slide_set_text`, `slide_add_text_box`, `slide_format_text`, `slide_edit_shape`, `slide_set_notes` |
+| Text documents | `word_read_document`, `word_insert_paragraphs`, `word_replace_paragraph`, `word_delete_elements`, `word_search_replace`, `word_format_text`, `word_format_paragraphs`, `word_list_styles`, `word_modify_style`, `word_set_style`, `word_add_comment`, `word_list_comments`, `word_insert_table`, `word_insert_image`, `word_set_list`, `word_set_header_footer`, `word_add_footnote`, `word_add_hyperlink`, `word_page_setup`, `word_insert_page_break`, `word_set_track_changes` |
+| Spreadsheets | `cell_list_sheets`, `cell_read_range`, `cell_write_range`, `cell_get_selection`, `cell_format_range`, `cell_clear_range`, `cell_insert_cells`, `cell_delete_cells`, `cell_manage_sheet`, `cell_add_comment`, `cell_add_chart`, `cell_add_image` |
+| Presentations | `slide_list`, `slide_add`, `slide_manage`, `slide_set_text`, `slide_add_text_box`, `slide_format_text`, `slide_edit_shape`, `slide_set_notes`, `slide_add_image`, `slide_set_background`, `slide_set_bullets` |
 
 Formatting covers fonts, sizes, colors, highlight, caps, alignment, line spacing, space before/after, indents and paragraph backgrounds in text documents (per selection, paragraph, search match, whole document, or by changing a style); fonts, colors, borders, alignment, number formats and sizes in spreadsheets; fonts, colors, alignment and line spacing in presentations.
+
+Images can come from a URL, a file on your computer, or a data URL; the server embeds them, so the document server never has to fetch anything.
+
+### API reference
+
+The OnlyOffice Office API has about 2,600 methods; only the common tasks have dedicated tools. For the rest, Claude searches `api_reference` (generated from the OnlyOffice sources, see `mcp-server/scripts/build-api-reference.mjs`) and writes a `run_script`. To match another OnlyOffice version, regenerate it:
+
+```bash
+cd mcp-server && node scripts/build-api-reference.mjs v10.0.0.176
+```
 
 `run_script` runs any [OnlyOffice Office API](https://api.onlyoffice.com/docs/office-api/get-started/overview/) code in the editor, for everything the other tools do not cover.

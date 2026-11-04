@@ -2,7 +2,7 @@
 // Functions passed to bridge.run() execute inside the editor (see word.mjs).
 
 import { z } from 'zod';
-import { documentArg, hexToRgb, parseCell, cellRef } from './shared.mjs';
+import { documentArg, hexToRgb, parseCell, cellRef, imageSourceSchema, loadImage, imageExtent, EMU_PER_CM } from './shared.mjs';
 
 const sheetArg = {
   sheet: z.string().optional().describe('Sheet name (default: the active sheet).'),
@@ -285,5 +285,70 @@ export const cellTools = [
       ws.GetRange(s.cell).AddComment(s.text, s.author || 'Claude');
       return { commented: s.cell };
     }, a),
+  },
+  {
+    name: 'cell_add_chart',
+    title: 'Add chart',
+    description: 'Create a chart from a data range (first row/column used as labels) and place it with its top-left corner at a cell. Types include ColumnClustered, BarClustered, LineNormal, LineMarker, Pie, Doughnut, Area, XYScatter, Radar, ComboColumnClusteredLine (see api_reference type "ChartType").',
+    schema: {
+      ...documentArg,
+      ...sheetArg,
+      data_range: z.string().describe('e.g. "A1:C13"'),
+      type: z.string().optional().describe('Chart type, default "ColumnClustered".'),
+      at: z.string().optional().describe('Top-left cell for the chart, default two columns right of the data.'),
+      title: z.string().optional(),
+      series_in_rows: z.boolean().optional().describe('Series are rows instead of columns (default false).'),
+      width_cm: z.number().positive().optional().describe('Default 15.'),
+      height_cm: z.number().positive().optional().describe('Default 9.'),
+      legend: z.enum(['left', 'top', 'right', 'bottom', 'none']).optional(),
+      data_labels: z.boolean().optional().describe('Show values on the chart.'),
+      style: z.number().int().min(1).max(48).optional().describe('Built-in style 1–48 (default 2).'),
+    },
+    run: (b, c, a) => {
+      const range = a.data_range.split(':');
+      const end = parseCell(range[1] || range[0]);
+      const at = a.at ? parseCell(a.at) : { col: end.col + 2, row: parseCell(range[0]).row };
+      return b.run(c, function () {
+        var s = Asc.scope;
+        var ws = s.sheet ? Api.GetSheet(s.sheet) : Api.GetActiveSheet();
+        if (!ws) throw new Error('Unknown sheet: ' + s.sheet);
+        var ch = ws.AddChart(s.range, !!s.inRows, s.type || 'ColumnClustered', s.style || 2, s.w, s.h, s.col, 0, s.row, 0);
+        if (!ch) throw new Error('Could not create the chart (check the range and the type)');
+        if (s.title) ch.SetTitle(s.title, 28, true);
+        if (s.legend) ch.SetLegendPos(s.legend);
+        if (s.labels) ch.SetShowDataLabels(false, false, true, false);
+        return { chart: true, sheet: ws.GetName() };
+      }, {
+        sheet: a.sheet, range: a.data_range, type: a.type, inRows: a.series_in_rows, style: a.style,
+        w: Math.round((a.width_cm || 15) * EMU_PER_CM), h: Math.round((a.height_cm || 9) * EMU_PER_CM),
+        col: at.col, row: at.row, title: a.title, legend: a.legend, labels: a.data_labels,
+      });
+    },
+  },
+
+  {
+    name: 'cell_add_image',
+    title: 'Add image to sheet',
+    description: 'Insert an image (URL, file on this computer, or data URL) with its top-left corner at a cell. Size in cm (aspect ratio kept, default width 8 cm).',
+    schema: {
+      ...documentArg,
+      ...sheetArg,
+      source: imageSourceSchema,
+      at: z.string().describe('Top-left cell, e.g. "B2".'),
+      width_cm: z.number().positive().optional(),
+      height_cm: z.number().positive().optional(),
+    },
+    run: async (b, c, a) => {
+      const img = await loadImage(a.source);
+      const { w, h } = imageExtent(img.size, a.width_cm, a.height_cm, 8);
+      const at = parseCell(a.at);
+      return b.run(c, function () {
+        var s = Asc.scope;
+        var ws = s.sheet ? Api.GetSheet(s.sheet) : Api.GetActiveSheet();
+        if (!ws) throw new Error('Unknown sheet: ' + s.sheet);
+        if (!ws.AddImage(s.src, s.w, s.h, s.col, 0, s.row, 0)) throw new Error('Could not insert the image');
+        return { image: true, at: s.at };
+      }, { sheet: a.sheet, src: img.dataUrl, w, h, col: at.col, row: at.row, at: a.at });
+    },
   },
 ];
