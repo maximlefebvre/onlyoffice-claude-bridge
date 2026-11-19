@@ -53,7 +53,7 @@
         <!-- screenshot: <figure><img src="img/install.png" alt="Claude Bridge in the custom store, with its Install button" width="1200" height="700" loading="lazy"><figcaption>Install Claude Bridge</figcaption></figure> -->
       </li>
       <li>
-        <p>Open it from the <b>Plugins</b> tab: a <b>Claude Bridge</b> panel appears on the left. It is installed for this browser and works in text documents, spreadsheets and presentations.</p>
+        <p>Claude Bridge is a <b>background plugin</b>: it keeps each open document connected, even when its panel is hidden. If it is not on yet, turn it on in the <b>Plugins</b> tab → <b>Background plugins</b> (this choice is remembered). A <b>Claude Bridge</b> panel then appears on the left with the connection status; a <b>Claude</b> tab brings it back if you close it. It is installed for this browser and works in text documents, spreadsheets and presentations (OnlyOffice 8.1 or later).</p>
       </li>
     </ol>
   </div>
@@ -65,7 +65,7 @@
     <table>
       <tr><th>Firefox</th><td>Since version 151, Firefox blocks the editor's plugin frame from reaching <code class="inline">127.0.0.1</code>, without asking.
       The panel then shows <b>Click Connect</b>: click it, and a small <b>relay window</b> opens and carries the connection. The first time, Firefox asks in that window whether the site may access apps on this device: tick <b>Remember</b> and <b>Allow</b>.
-      Keep the relay window open while you work (one per document tab); it closes by itself with the document. If nothing opens, allow pop-ups for the editor's site.</td></tr>
+      Keep the relay window open while you work (one per document tab); hiding the panel does not affect it, and it closes by itself with the document. If nothing opens, allow pop-ups for the editor's site.</td></tr>
       <tr><th>Chrome, Edge</th><td>Recent versions have a similar protection and should use the same relay window. Not tested yet inside an editor: if the panel cannot connect, please <a href="https://github.com/maximlefebvre/onlyoffice-claude-bridge/issues">open an issue</a>.</td></tr>
       <tr><th>Safari</th><td>Not tested yet.</td></tr>
     </table>
@@ -96,8 +96,8 @@
       <tr><th>Panel shows “Click Connect”</th><td>Your browser blocks direct connections from the editor: click <b>Connect</b> to open the relay window, and keep it open.</td></tr>
       <tr><th>Panel stays on “Connecting…” or “Reconnecting…”</th><td>Start (or restart) a Claude session, then run the test on the <a href="connect.html">connection page</a>.</td></tr>
       <tr><th>“Connection denied”</th><td>The connection was refused in the dialog. Close and reopen the panel to ask again.</td></tr>
-      <tr><th>Claude says no document is connected</th><td>Open the Claude Bridge panel in that document. Each open document needs its panel open.</td></tr>
-      <tr><th>“Port in use”</th><td>Another Claude session already runs the bridge: close it, or use that session.</td></tr>
+      <tr><th>Claude says no document is connected</th><td>Check that Claude Bridge is on under <b>Plugins → Background plugins</b>, then open its panel (<b>Claude</b> tab → <b>Claude Bridge</b>) to see the status. The panel itself does not need to stay open.</td></tr>
+      <tr><th>“Port … is held by another Claude Bridge server”</th><td>Another Claude session already runs the bridge, and documents connect to that session. Close it: the current session takes over the port by itself within a few seconds.</td></tr>
       <tr><th>Old plugin version</th><td>In the Plugin Manager, remove Claude Bridge and install it again from the store.</td></tr>
     </table>
   </div>

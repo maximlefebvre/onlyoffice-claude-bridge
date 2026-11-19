@@ -5,7 +5,7 @@ description: Edit the documents, spreadsheets and presentations the user has ope
 
 # Editing open OnlyOffice files
 
-The `onlyoffice` MCP server talks live to the **Claude Bridge** panel running inside the user's OnlyOffice editor. Every edit appears immediately in their document, and they can undo it there with Cmd/Ctrl+Z. Nothing is uploaded anywhere: the server only listens on 127.0.0.1.
+The `onlyoffice` MCP server talks live to the **Claude Bridge** plugin running in the background inside the user's OnlyOffice editor. Every edit appears immediately in their document, and they can undo it there with Cmd/Ctrl+Z. Nothing is uploaded anywhere: the server only listens on 127.0.0.1.
 
 ## Workflow
 
@@ -19,10 +19,10 @@ For large rewrites of a text document, offer `word_set_track_changes` first so t
 
 ## When nothing is connected
 
-- **No document listed:** ask the user to open the document, then **Plugins → Claude Bridge**. The panel connects on its own and shows a green dot once connected.
+- **No document listed:** ask the user to open the document and check that Claude Bridge is on under **Plugins → Background plugins**. It connects on its own; its panel (**Claude** tab → **Claude Bridge**) shows a green dot once connected. The panel does not need to stay visible.
 - **Panel stuck on "Waiting for approval":** the first connection from a browser must be approved. On macOS, Windows and Linux desktops a dialog appears. Without a dialog, call `list_connection_requests`, ask the user whether to allow it, and call `approve_connection` **only with their explicit answer**.
 - **Panel says the server is unreachable in Firefox:** see the install guide at https://maximlefebvre.github.io/onlyoffice-claude-bridge/install.html.
-- **Error "port in use":** another Claude session already runs the bridge. Only one session at a time can serve it.
+- **Error "port … is held by another Claude Bridge server":** another Claude session owns the connection. Only one session at a time can serve it; when the user closes the other one, this session takes over the port automatically within a few seconds.
 
 ## run_script essentials
 

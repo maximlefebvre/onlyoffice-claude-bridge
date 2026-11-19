@@ -1,7 +1,7 @@
 // WebSocket hub between this MCP server and the Claude Bridge plugins running
 // inside OnlyOffice editors.
 
-import { WebSocketServer } from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -127,18 +127,30 @@ async function showDialog(message) {
   return null;
 }
 
+// How long to retry binding the port while another process holds it.
+const LISTEN_RETRY_MS = 5000;
+// After a document disconnects, how long a tool call waits for it (or another
+// document) to come back before reporting that nothing is connected. Covers
+// plugin reloads and short network hiccups.
+const RECONNECT_WINDOW_MS = 60000;
+
 export class Bridge {
-  constructor({ port, host = '127.0.0.1', allowedOrigins, token, timeoutMs = 20000, version = '' }) {
+  constructor({ port, host = '127.0.0.1', allowedOrigins, token, timeoutMs = 20000, graceMs = 6000, version = '' }) {
     this.version = version;
     this.port = port;
     this.host = host;
     this.allowedOrigins = allowedOrigins;
     this.token = token;
     this.timeoutMs = timeoutMs;
+    this.graceMs = graceMs;
     this.clients = new Map(); // ws -> client
     this.pending = new Map(); // request id -> { resolve, reject, timer }
     this.nextId = 1;
+    this.knownIds = new Map(); // document key -> id, so a reconnecting document keeps its id
+    this.waiters = new Set(); // callbacks run when a document connects
+    this.lastDisconnectAt = 0;
     this.listenError = null;
+    this.portHolder = null; // what holds the port when it is taken (from a probe)
     this.devices = new DeviceStore();
     this.pairing = new Map(); // pairing id -> { ws, client, resolve }
     this.nextPairingId = 1;
@@ -146,7 +158,13 @@ export class Bridge {
   }
 
   start() {
-    this.wss = new WebSocketServer({
+    this.#listen();
+  }
+
+  // Binds the port. When it is taken (usually by the server of another Claude
+  // session), keeps retrying so this session takes over as soon as it is free.
+  #listen() {
+    const wss = new WebSocketServer({
       host: this.host,
       port: this.port,
       verifyClient: ({ origin }, done) => {
@@ -155,14 +173,67 @@ export class Bridge {
         done(ok, 403, 'Origin not allowed');
       },
     });
-    this.wss.on('listening', () => log(`listening on ws://${this.host}:${this.port}`));
-    this.wss.on('error', (err) => {
-      this.listenError = err;
-      log(err.code === 'EADDRINUSE'
-        ? `port ${this.port} is already in use (another instance or the test server is running)`
-        : `WebSocket server error: ${err.message}`);
+    this.wss = wss;
+    wss.on('listening', () => {
+      const tookOver = !!this.listenError;
+      this.listenError = null;
+      this.portHolder = null;
+      log(`listening on ws://${this.host}:${this.port}${tookOver ? ' (the port was released by the other process)' : ''}`);
     });
-    this.wss.on('connection', (ws, req) => this.#onConnection(ws, req));
+    wss.on('error', (err) => {
+      const first = !this.listenError;
+      this.listenError = err;
+      if (err.code === 'EADDRINUSE') {
+        this.#probePortHolder().then((holder) => {
+          this.portHolder = holder;
+          if (first) log(this.#portTakenMessage() + ` Retrying every ${LISTEN_RETRY_MS / 1000}s.`);
+        });
+        try { wss.close(); } catch {}
+        setTimeout(() => this.#listen(), LISTEN_RETRY_MS).unref();
+      } else {
+        log(`WebSocket server error: ${err.message}`);
+      }
+    });
+    wss.on('connection', (ws, req) => this.#onConnection(ws, req));
+  }
+
+  // Asks whatever holds the port who it is. Resolves { bridge: true, version, pid }
+  // for another Claude Bridge server, { bridge: false } otherwise.
+  #probePortHolder() {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => { if (!done) { done = true; clearTimeout(timer); try { sock.terminate(); } catch {} resolve(v); } };
+      const origin = this.allowedOrigins.find((o) => o !== '*') || 'http://localhost';
+      const sock = new WebSocket(`ws://${this.host}:${this.port}`, { origin });
+      const timer = setTimeout(() => finish({ bridge: false }), 2000);
+      sock.on('open', () => sock.send(JSON.stringify({ type: 'probe' })));
+      sock.on('message', (raw) => {
+        try {
+          const m = JSON.parse(raw);
+          if (m.type === 'probe_ok') finish({ bridge: true, version: m.version || null, pid: m.pid || null });
+        } catch {}
+      });
+      sock.on('error', () => finish({ bridge: false }));
+      sock.on('close', () => finish({ bridge: false }));
+    });
+  }
+
+  #portTakenMessage() {
+    const h = this.portHolder;
+    if (h && h.bridge) {
+      return `Port ${this.port} is held by another Claude Bridge server`
+        + `${h.pid ? ` (pid ${h.pid}` : ' ('}${h.version ? `${h.pid ? ', ' : ''}version ${h.version}` : ''})`
+        + ', most likely started by another Claude session. OnlyOffice documents connect to that session only.'
+        + ' Close the other session (or stop that process): this session takes over the port automatically within a few seconds.';
+    }
+    return `Port ${this.port} is used by another program, so OnlyOffice documents cannot connect to this session.`
+      + ' Free the port or set CLAUDE_BRIDGE_PORT (and the same port under Advanced in the plugin panel).';
+  }
+
+  #assertListening() {
+    if (!this.listenError) return;
+    if (this.listenError.code === 'EADDRINUSE') throw new Error(this.#portTakenMessage());
+    throw new Error(`The bridge is not listening on port ${this.port}: ${this.listenError.message}`);
   }
 
   #sameToken(t) {
@@ -184,7 +255,7 @@ export class Bridge {
         clearTimeout(helloTimer);
         if (msg.type === 'probe') {
           // Connection check from the setup page: no access to documents.
-          ws.send(JSON.stringify({ type: 'probe_ok', server: 'onlyoffice-claude-bridge', version: this.version }));
+          ws.send(JSON.stringify({ type: 'probe_ok', server: 'onlyoffice-claude-bridge', version: this.version, pid: process.pid }));
           ws.close(1000, 'probe');
           return;
         }
@@ -210,8 +281,18 @@ export class Bridge {
       clearTimeout(helloTimer);
       for (const [pid, p] of this.pairing) if (p.client.ws === ws) this.pairing.delete(pid);
       const c = this.clients.get(ws);
-      if (c) log(`document #${c.id} disconnected: ${c.title}`);
+      if (c) {
+        log(`document #${c.id} disconnected: ${c.title}`);
+        this.lastDisconnectAt = Date.now();
+      }
       this.clients.delete(ws);
+      // Fail the calls still waiting on this editor instead of letting them time out.
+      for (const [id, p] of this.pending) {
+        if (p.ws !== ws) continue;
+        this.pending.delete(id);
+        clearTimeout(p.timer);
+        p.reject(new Error('The document disconnected before answering. It reconnects by itself: try again in a moment.'));
+      }
     });
   }
 
@@ -232,12 +313,41 @@ export class Bridge {
   #accept(client, newToken) {
     const { ws } = client;
     if (ws.readyState !== ws.OPEN) return;
-    client.id = this.nextId++;
-    // Several panels may share a document id (e.g. the same file open twice):
-    // keep them all, they are told apart by connection id.
+    // A document that reconnects (plugin reload, server restart of the relay…)
+    // keeps its previous id, unless that id is still in use: several plugins
+    // may share a document id (e.g. the same file open twice), and they are
+    // told apart by connection id.
+    const key = client.documentId ? `${client.origin}|${client.documentId}` : null;
+    const previous = key ? this.knownIds.get(key) : undefined;
+    const inUse = (id) => [...this.clients.values()].some((c) => c.id === id);
+    client.id = previous !== undefined && !inUse(previous) ? previous : this.nextId++;
+    if (key && previous === undefined) this.knownIds.set(key, client.id);
     this.clients.set(ws, client);
     ws.send(JSON.stringify(newToken ? { type: 'welcome', token: newToken } : { type: 'welcome' }));
     log(`document #${client.id} connected: ${client.title} (${client.editor}, plugin ${client.pluginVersion})`);
+    for (const w of [...this.waiters]) w();
+  }
+
+  // Resolves once `match()` returns something (checked now and each time a
+  // document connects), or with null after `ms`.
+  #waitFor(match, ms) {
+    const now = match();
+    if (now || ms <= 0) return Promise.resolve(now || null);
+    return new Promise((resolve) => {
+      const check = () => {
+        const v = match();
+        if (v) { cleanup(); resolve(v); }
+      };
+      const timer = setTimeout(() => { cleanup(); resolve(null); }, ms);
+      const cleanup = () => { clearTimeout(timer); this.waiters.delete(check); };
+      this.waiters.add(check);
+    });
+  }
+
+  // Grace period: wait only when a document went away recently (it is most
+  // likely reconnecting); otherwise answer at once.
+  #graceMs() {
+    return Date.now() - this.lastDisconnectAt < RECONNECT_WINDOW_MS ? this.graceMs : 0;
   }
 
   async #requestPairing(client) {
@@ -286,7 +396,9 @@ export class Bridge {
     }));
   }
 
-  listDocuments() {
+  async listDocuments() {
+    this.#assertListening();
+    await this.#waitFor(() => this.clients.size > 0, this.#graceMs());
     return [...this.clients.values()]
       .sort((a, b) => b.lastUsedAt - a.lastUsedAt)
       .map((c) => ({
@@ -299,14 +411,24 @@ export class Bridge {
   }
 
   // Picks the target document: by id, by title substring, or the most recently
-  // used one (optionally restricted to an editor type).
-  resolve(document, editor) {
-    if (this.listenError) {
-      throw new Error(`The bridge is not listening on port ${this.port}: ${this.listenError.message}`);
-    }
+  // used one (optionally restricted to an editor type). When nothing matches
+  // right after a disconnection, waits a few seconds for the plugin to
+  // reconnect before failing.
+  async resolve(document, editor) {
+    this.#assertListening();
+    let error = null;
+    const attempt = () => {
+      try { error = null; return this.#pick(document, editor); } catch (e) { error = e; return null; }
+    };
+    const target = await this.#waitFor(attempt, this.#graceMs());
+    if (target) return target;
+    throw error || new Error('No OnlyOffice document is connected.');
+  }
+
+  #pick(document, editor) {
     let candidates = [...this.clients.values()];
     if (!candidates.length) {
-      throw new Error('No OnlyOffice document is connected. Open a document, open the Claude Bridge plugin panel and click Connect.');
+      throw new Error('No OnlyOffice document is connected. Ask the user to open the document in OnlyOffice: the Claude Bridge plugin connects by itself once it is enabled under Plugins → Background plugins. Its panel (Claude tab → Claude Bridge) shows the status and a Connect button.');
     }
     if (document !== undefined && document !== null && document !== '') {
       const asNum = Number(document);
@@ -337,12 +459,16 @@ export class Bridge {
   call(client, method, params = {}) {
     client.lastUsedAt = new Date();
     return new Promise((resolve, reject) => {
+      if (client.ws.readyState !== client.ws.OPEN) {
+        reject(new Error('The document disconnected. It reconnects by itself: try again in a moment.'));
+        return;
+      }
       const id = randomUUID();
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`The editor did not answer within ${this.timeoutMs / 1000}s`));
       }, this.timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, ws: client.ws });
       client.ws.send(JSON.stringify({ id, method, params }));
     });
   }

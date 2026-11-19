@@ -34,16 +34,29 @@
  * (Local Network Access): no prompt is shown in a cross-site frame, and a
  * site permission does not apply there. This window is a top-level page of
  * the same origin, so the browser can ask once and remember it. It holds the
- * WebSocket and relays frames to and from the plugin panel that opened it.
+ * WebSocket and relays frames to and from the background part of the plugin
+ * (the "host"), which keeps running while the panel is hidden.
  *
- * panel -> relay : { cb: "connect", url, title } | { cb: "send", data } | { cb: "close" }
- * relay -> panel : { cb: "ready" } | { cb: "open" } | { cb: "message", data }
- *                  | { cb: "error" } | { cb: "closed", code, reason }
+ * The panel opens this window (pop-ups need a click), but the panel may go
+ * away at any time. So this window looks for the host itself: it walks the
+ * frames of the editor tab that opened it and calls out to each one; the
+ * host answers when the document key (in the URL hash) is its own. The
+ * search resumes if the host goes away (plugin reload), and this window
+ * closes when the editor tab is closed or the document stays gone.
+ *
+ * relay -> host : { cb: "relay-hello", key } | { cb: "open" } | { cb: "message", data }
+ *                 | { cb: "error" } | { cb: "closed", code, reason }
+ * host -> relay : { cb: "relay-host", key } | { cb: "connect", url, title } | { cb: "send", data } | { cb: "close" }
  */
 (function () {
   'use strict';
   var ORIGIN = location.origin;
+  var KEY = decodeURIComponent(location.hash.slice(1) || 'default');
+  var HOST_LOST_CLOSE_MS = 60000; // close if the document is gone this long
   var ws = null;
+  var host = null; // WindowProxy of the plugin's background frame
+  var editorTop = null; // top window of the editor tab, kept after the panel goes away
+  var lostSince = Date.now();
   var $ = function (id) { return document.getElementById(id); };
 
   function setStatus(state, text) {
@@ -51,63 +64,109 @@
     $('status').textContent = text;
   }
 
-  function toPanel(msg) {
-    if (window.opener && !window.opener.closed) window.opener.postMessage(msg, ORIGIN);
+  function alive(w) {
+    try { return !!(w && !w.closed); } catch (e) { return false; }
+  }
+
+  function toHost(msg) {
+    if (alive(host)) host.postMessage(msg, ORIGIN);
+  }
+
+  function closeSocket() {
+    if (ws) { var s = ws; ws = null; try { s.close(); } catch (e) {} }
+  }
+
+  // Calls out to every frame of the editor tab (cross-origin frames can still
+  // be listed and messaged; only same-origin frames receive the message).
+  function discover() {
+    if (!alive(editorTop)) return;
+    var queue = [{ w: editorTop, depth: 0 }];
+    var seen = 0;
+    while (queue.length && seen < 200) {
+      var item = queue.shift();
+      var n = 0;
+      try { n = item.w.frames.length; } catch (e) { n = 0; }
+      for (var i = 0; i < n; i++) {
+        var f;
+        try { f = item.w.frames[i]; } catch (e) { continue; }
+        seen++;
+        try { f.postMessage({ cb: 'relay-hello', key: KEY }, ORIGIN); } catch (e) {}
+        if (item.depth < 6) queue.push({ w: f, depth: item.depth + 1 });
+      }
+    }
   }
 
   function openSocket(url) {
-    if (ws) { var old = ws; ws = null; try { old.close(); } catch (e) {} }
+    closeSocket();
     // Only the local bridge server may be reached from here.
     if (!/^ws:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{1,5}\/?$/.test(url)) {
-      toPanel({ cb: 'closed', code: 4000, reason: 'invalid url' });
+      toHost({ cb: 'closed', code: 4000, reason: 'invalid url' });
       return;
     }
     setStatus('wait', 'Connecting…');
     var sock;
     try { sock = new WebSocket(url); } catch (e) {
       setStatus('', 'Connection failed');
-      toPanel({ cb: 'closed', code: 1006, reason: String(e.message || e) });
+      toHost({ cb: 'closed', code: 1006, reason: String(e.message || e) });
       return;
     }
     ws = sock;
-    sock.onopen = function () { if (sock === ws) { setStatus('on', 'Connected to Claude'); toPanel({ cb: 'open' }); } };
-    sock.onmessage = function (ev) { if (sock === ws) toPanel({ cb: 'message', data: String(ev.data) }); };
-    sock.onerror = function () { if (sock === ws) toPanel({ cb: 'error' }); };
+    sock.onopen = function () { if (sock === ws) { setStatus('on', 'Connected to Claude'); toHost({ cb: 'open' }); } };
+    sock.onmessage = function (ev) { if (sock === ws) toHost({ cb: 'message', data: String(ev.data) }); };
+    sock.onerror = function () { if (sock === ws) toHost({ cb: 'error' }); };
     sock.onclose = function (ev) {
       if (sock !== ws) return;
       ws = null;
       setStatus('wait', 'Waiting for Claude…');
-      toPanel({ cb: 'closed', code: ev.code, reason: ev.reason });
+      toHost({ cb: 'closed', code: ev.code, reason: ev.reason });
     };
   }
 
   window.addEventListener('message', function (ev) {
-    if (ev.origin !== ORIGIN || ev.source !== window.opener) return;
-    var m = ev.data || {};
+    if (ev.origin !== ORIGIN) return;
+    var m = ev.data;
+    if (!m || typeof m !== 'object') return;
+    if (m.cb === 'relay-host') {
+      if (String(m.key) !== KEY) return;
+      if (host !== ev.source) {
+        host = ev.source;
+        setStatus('wait', 'Waiting for Claude…');
+      }
+      return;
+    }
+    if (ev.source !== host) return;
     if (m.cb === 'connect') {
       if (m.title) { $('doc').textContent = '“' + String(m.title) + '”'; document.title = 'Claude Bridge — ' + String(m.title); }
       openSocket(String(m.url || ''));
     } else if (m.cb === 'send') {
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(String(m.data));
     } else if (m.cb === 'close') {
-      if (ws) { var s = ws; ws = null; try { s.close(); } catch (e) {} }
+      closeSocket();
       setStatus('', 'Disconnected');
     }
   });
 
-  // Close with the document: the panel (opener) disappears when the editor is closed.
   setInterval(function () {
-    if (!window.opener || window.opener.closed) {
-      if (ws) { try { ws.close(); } catch (e) {} }
-      window.close();
+    // The editor tab was closed: nothing left to relay for.
+    if (!alive(editorTop)) { closeSocket(); window.close(); return; }
+    if (alive(host)) { lostSince = Date.now(); return; }
+    if (host) {
+      // The host went away (plugin reload, document closed): drop the socket
+      // so the server stops listing the document, then look for it again.
+      host = null;
+      closeSocket();
+      setStatus('wait', 'Looking for the document…');
     }
+    if (Date.now() - lostSince > HOST_LOST_CLOSE_MS) { window.close(); return; }
+    discover();
   }, 1000);
 
-  if (!window.opener) {
+  try { editorTop = window.opener ? window.opener.top : null; } catch (e) { editorTop = null; }
+  if (!editorTop) {
     setStatus('', 'Open this window from the Claude Bridge panel');
   } else {
-    setStatus('wait', 'Waiting for the panel…');
-    toPanel({ cb: 'ready' });
+    setStatus('wait', 'Looking for the document…');
+    discover();
   }
 })();
 </script>

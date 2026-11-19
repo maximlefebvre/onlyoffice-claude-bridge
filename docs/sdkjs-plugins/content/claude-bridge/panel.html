@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <title>Claude Bridge</title>
+  <script src="https://onlyoffice.github.io/sdkjs-plugins/v1/plugins.js"></script>
+  <script src="https://onlyoffice.github.io/sdkjs-plugins/v1/plugins-ui.js"></script>
+  <link rel="stylesheet" href="https://onlyoffice.github.io/sdkjs-plugins/v1/plugins.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="asc-plugin-body">
+  <div class="cb">
+    <div class="cb-status">
+      <span id="dot" class="dot dot-off"></span>
+      <span id="status">Starting…</span>
+    </div>
+    <div id="hint" class="cb-hint" hidden></div>
+    <div class="cb-note">The connection stays up in the background while the document is open, even when this panel is hidden.</div>
+
+    <details class="cb-advanced">
+      <summary>Advanced</summary>
+      <label class="cb-label" for="port">Local port</label>
+      <input id="port" class="form-control" type="number" value="47615">
+      <label class="cb-label" for="token">Token</label>
+      <input id="token" class="form-control" type="password" placeholder="Set automatically after approval" autocomplete="off">
+    </details>
+
+    <div class="cb-actions">
+      <button id="connect" class="btn-text-default">Connect</button>
+      <button id="disconnect" class="btn-text-default">Disconnect</button>
+    </div>
+
+    <div class="cb-label">Log</div>
+    <div id="log" class="cb-log"></div>
+  </div>
+  <script src="panel.js?v=0.5.0"></script>
+</body>
+</html>

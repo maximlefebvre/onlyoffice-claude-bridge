@@ -6,11 +6,11 @@
   "offered": "Maxim Lefebvre",
   "guid": "asc.{94F53A2A-11A7-4AD1-9BC9-F96E2A6CDF8A}",
   "baseUrl": "",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "minVersion": "8.1.0",
   "variations": [
     {
-      "description": "Connects this document, spreadsheet or presentation to Claude (Claude app or Claude Code) through a local MCP server on your computer.",
+      "description": "Keeps this document, spreadsheet or presentation connected to Claude (Claude app or Claude Code) through a local MCP server on your computer, while the document is open.",
       "url": "index.html",
       "icons": [
         "resources/light/icon.svg",
@@ -50,16 +50,13 @@
         "cell",
         "slide"
       ],
-      "type": "panel",
-      "isVisual": true,
-      "isModal": false,
-      "isInsideMode": true,
+      "type": "background",
+      "isVisual": false,
       "initDataType": "none",
       "initData": "",
-      "isUpdateOleOnResize": false,
-      "size": [
-        300,
-        400
+      "buttons": [],
+      "events": [
+        "onToolbarMenuClick"
       ],
       "store": {
         "background": {

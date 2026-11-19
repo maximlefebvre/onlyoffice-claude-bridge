@@ -27,7 +27,9 @@ claude plugin marketplace add maximlefebvre/onlyoffice-claude-bridge
 claude plugin install onlyoffice-bridge@onlyoffice-bridge
 ```
 
-Each new Claude Code session then starts the server, which listens on `ws://127.0.0.1:47615`. Only one session at a time can use the port.
+Each new Claude Code session then starts the server, which listens on `ws://127.0.0.1:47615`. Only one session at a time can use the port: the others keep retrying, and their tools report which process holds it (another Claude Bridge server, with its pid). When the session holding the port ends, the next one takes it over within a few seconds and the plugin reconnects to it.
+
+When a document disconnects (plugin reload, network hiccup), tool calls wait a few seconds (`CLAUDE_BRIDGE_GRACE_MS`, default 6000) for it to come back before reporting that nothing is connected, and a reconnecting document keeps its id.
 
 #### Other MCP clients
 
@@ -44,16 +46,20 @@ Claude desktop app (Chat tab), in `claude_desktop_config.json`, or any MCP clien
 }
 ```
 
-Options (environment variables): `CLAUDE_BRIDGE_PORT`, `CLAUDE_BRIDGE_ALLOWED_ORIGINS` (default `https://maximlefebvre.github.io`), `CLAUDE_BRIDGE_TIMEOUT_MS`, `CLAUDE_BRIDGE_NO_DIALOG` (never show the approval dialog).
+Options (environment variables): `CLAUDE_BRIDGE_PORT`, `CLAUDE_BRIDGE_ALLOWED_ORIGINS` (default `https://maximlefebvre.github.io`), `CLAUDE_BRIDGE_TIMEOUT_MS`, `CLAUDE_BRIDGE_GRACE_MS`, `CLAUDE_BRIDGE_NO_DIALOG` (never show the approval dialog).
 
 ### 2. Install the editor plugin
 
 In the OnlyOffice editor: Plugins → Plugin Manager → `</>` (developer mode) → paste
-`https://maximlefebvre.github.io/onlyoffice-claude-bridge/store/index.html`, then install **Claude Bridge** and open its panel. It connects by itself.
+`https://maximlefebvre.github.io/onlyoffice-claude-bridge/store/index.html`, then install **Claude Bridge**. It is a background plugin: turn it on under **Plugins → Background plugins** if needed (remembered across sessions). It connects by itself and keeps each open document connected while the document is open, whether or not its panel is shown. The panel (left bar, or **Claude** tab → **Claude Bridge**) shows the status, a Connect button and the log.
+
+Requires OnlyOffice 8.1+ (background plugins since 8.0, plugin panels and toolbar buttons since 8.1). Tested target: Desktop Editors 10.0 and kDrive (OnlyOffice 10.0).
+
+How it works: `index.html` / `plugin.js` is the background variation (`"type": "background"` in `config.json`). It owns the WebSocket, runs the commands and reconnects automatically (backoff up to 15 s). It opens `panel.html` / `panel.js` as a plugin panel (`Asc.PluginWindow`), which is UI only: state goes to it with `command("onState")` and user actions come back with `sendToPlugin("onPanelAction")`. Hiding or closing the panel does not touch the connection.
 
 ### 3. Browsers with Local Network Access (Firefox 151+, recent Chrome)
 
-These browsers block the plugin frame from reaching `127.0.0.1`: prompts are not allowed in cross-origin frames, and the WebSocket's triggering principal is partitioned under the editor's top-level site, so a permission granted to `maximlefebvre.github.io` in a normal tab does not apply there. The panel detects it (Permissions API) and switches to a **relay window**: on **Connect**, it opens `relay.html` (same origin, top-level), which can ask for the permission, holds the WebSocket and relays frames to the panel with `postMessage`. One relay window per document tab; it closes when the panel goes away. The `network.lna.skip-domains` workaround is no longer needed (it exposed local services to every site).
+These browsers block the plugin frame from reaching `127.0.0.1`: prompts are not allowed in cross-origin frames, and the WebSocket's triggering principal is partitioned under the editor's top-level site, so a permission granted to `maximlefebvre.github.io` in a normal tab does not apply there. The panel detects it (Permissions API) and switches to a **relay window**: on **Connect**, it opens `relay.html` (same origin, top-level), which can ask for the permission, holds the WebSocket and relays frames with `postMessage` to the plugin's background frame. The panel only opens it (a pop-up needs a click); the relay then finds the background frame by itself by walking the editor tab's frames, so it keeps working while the panel is hidden, and finds the frame again after a plugin reload. One relay window per document tab; it closes when the editor tab is closed or the document has been gone for a minute. The `network.lna.skip-domains` workaround is no longer needed (it exposed local services to every site).
 
 ### 4. Approve the first connection
 

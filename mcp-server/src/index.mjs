@@ -9,6 +9,8 @@
 //   CLAUDE_BRIDGE_ALLOWED_ORIGINS  comma-separated origins allowed to connect
 //                                  (default: https://maximlefebvre.github.io)
 //   CLAUDE_BRIDGE_TIMEOUT_MS       editor call timeout (default 20000)
+//   CLAUDE_BRIDGE_GRACE_MS         how long a tool call waits for a document
+//                                  that just disconnected to come back (default 6000)
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -19,7 +21,7 @@ import { cellTools } from './tools/cell.mjs';
 import { slideTools } from './tools/slide.mjs';
 import { referenceTools } from './tools/reference.mjs';
 
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 const port = parseInt(process.env.CLAUDE_BRIDGE_PORT || '47615', 10);
 const allowedOrigins = (process.env.CLAUDE_BRIDGE_ALLOWED_ORIGINS || 'https://maximlefebvre.github.io')
   .split(',').map((s) => s.trim()).filter(Boolean);
@@ -30,6 +32,7 @@ const bridge = new Bridge({
   allowedOrigins,
   token,
   timeoutMs: parseInt(process.env.CLAUDE_BRIDGE_TIMEOUT_MS || '20000', 10),
+  graceMs: parseInt(process.env.CLAUDE_BRIDGE_GRACE_MS || '6000', 10),
   version: VERSION,
 });
 bridge.start();
@@ -44,7 +47,8 @@ const server = new McpServer(
       'Read before editing (word_read_document, cell_read_range, slide_list) and use the indexes they return.',
       'For anything the dedicated tools do not cover, look up the API with api_reference, then use run_script.',
       'Edits are applied immediately in the user\'s document and can be undone with Ctrl/Cmd+Z in the editor. For substantial rewrites of a text document, consider word_set_track_changes so the user can review.',
-      'If no document is connected, ask the user to open the Claude Bridge panel in the editor and click Connect.',
+      'The plugin keeps each open document connected in the background. If no document is connected, ask the user to check that Claude Bridge is enabled under Plugins → Background plugins, then open its panel (Claude tab → Claude Bridge) and click Connect.',
+      'If a tool reports that the port is held by another Claude Bridge server, another Claude session owns the connection: tell the user to close that session (this one takes over automatically).',
       'The first time a browser connects, the user approves it in a dialog on their computer. If list_connection_requests shows a pending request (no dialog available), ask the user and only call approve_connection with their explicit answer.',
     ].join(' '),
   },
@@ -69,7 +73,7 @@ for (const tool of [...commonTools, ...referenceTools, ...wordTools, ...cellTool
     },
     async (args = {}) => {
       try {
-        const client = tool.noDocument ? null : bridge.resolve(args.document, editor);
+        const client = tool.noDocument ? null : await bridge.resolve(args.document, editor);
         const result = await tool.run(bridge, client, args);
         const payload = client
           ? { document: { id: client.id, title: client.title, editor: client.editor }, result }
