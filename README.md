@@ -31,13 +31,23 @@ Each new Claude Code session then starts the server, which listens on `ws://127.
 
 #### Shared server (recommended with several Claude sessions)
 
-To let every Claude session use the connected documents at the same time, run one shared server as a login service (macOS):
+To let every Claude session use the connected documents at the same time, run one shared server (`dist/server.mjs --http`). On macOS, two ways:
 
-```bash
-mcp-server/scripts/install-service.sh            # install and start (also: status, restart, uninstall)
-```
+- **Menu bar app**, started and stopped by hand. It bundles the server, shows the connected documents, the Claude sessions and whether the plugin port is free, and opens the log. Launching the app starts the server, quitting it stops it; **Open at Login** is optional. Build it with the Xcode command line tools (no Xcode project):
 
-The service runs `dist/server.mjs --http`, which:
+  ```bash
+  macos-app/build.sh install    # builds and copies "Claude Bridge.app" to ~/Applications
+  ```
+
+  The app carries its own copy of `dist/server.mjs`: rebuild it after updating the server.
+
+- **Login service** (launchd agent), always running:
+
+  ```bash
+  mcp-server/scripts/install-service.sh            # install and start (also: status, restart, uninstall)
+  ```
+
+The shared server:
 
 - owns the WebSocket on port 47615, so documents stay connected whichever Claude sessions are open;
 - serves MCP over Streamable HTTP on `http://127.0.0.1:47616/mcp` (`CLAUDE_BRIDGE_MCP_PORT`). It only answers to `127.0.0.1` / `localhost` host names, refuses browser requests (any `Origin` header), and requires the bearer token stored in `~/.config/onlyoffice-claude-bridge/mcp-token`.

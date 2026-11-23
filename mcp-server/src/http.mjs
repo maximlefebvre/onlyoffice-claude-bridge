@@ -55,7 +55,8 @@ function readJson(req) {
 
 // Serves MCP on http://127.0.0.1:<port>/mcp. `makeServer()` returns a new,
 // unconnected McpServer; each MCP session gets its own, all sharing one bridge.
-export function startHttpServer({ port, token, version, makeServer }) {
+// `getStatus()` feeds GET /status (bearer token required), used by the menu bar app.
+export function startHttpServer({ port, token, version, makeServer, getStatus }) {
   const host = '127.0.0.1';
   const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
   const sessions = new Map(); // MCP session id -> transport
@@ -74,11 +75,15 @@ export function startHttpServer({ port, token, version, makeServer }) {
       if (path === '/health' && req.method === 'GET') {
         return sendJson(res, 200, { name: SERVER_NAME, version, sessions: sessions.size });
       }
-      if (path !== '/mcp') return sendJson(res, 404, { error: 'Not found' });
+      if (path !== '/mcp' && path !== '/status') return sendJson(res, 404, { error: 'Not found' });
 
       const auth = String(req.headers.authorization || '');
       if (!auth.startsWith('Bearer ') || !sameSecret(auth.slice(7), token)) {
         return rpcError(res, 401, 'Missing or wrong bearer token');
+      }
+      if (path === '/status') {
+        if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+        return sendJson(res, 200, { name: SERVER_NAME, version, pid: process.pid, sessions: sessions.size, ...(getStatus ? getStatus() : {}) });
       }
 
       const sessionId = req.headers['mcp-session-id'];

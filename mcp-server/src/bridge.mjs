@@ -413,6 +413,17 @@ export class Bridge {
     }));
   }
 
+  // Snapshot for the menu bar app: no waiting, never throws.
+  status() {
+    const h = this.portHolder;
+    return {
+      port: this.port,
+      listening: !this.listenError,
+      portHolder: this.listenError ? (h ? { pid: h.pid || null, bridge: !!h.bridge, version: h.version || null } : {}) : null,
+      documents: [...this.clients.values()].map((c) => ({ id: c.id, title: c.title, editor: c.editor })),
+    };
+  }
+
   async listDocuments() {
     this.#assertListening();
     await this.#waitFor(() => this.clients.size > 0, this.#graceMs());

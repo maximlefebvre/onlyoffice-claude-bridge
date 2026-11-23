@@ -23,15 +23,8 @@
 //   CLAUDE_BRIDGE_GRACE_MS         how long a tool call waits for a document
 //                                  that just disconnected to come back (default 6000)
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { Bridge, loadToken } from './bridge.mjs';
-import { startHttpServer, sharedServerUp, runProxy } from './http.mjs';
-import { commonTools } from './tools/common.mjs';
-import { wordTools } from './tools/word.mjs';
-import { cellTools } from './tools/cell.mjs';
-import { slideTools } from './tools/slide.mjs';
-import { referenceTools } from './tools/reference.mjs';
+import { loadToken } from './bridge.mjs';
+import { sharedServerUp, runProxy } from './http.mjs';
 
 const VERSION = '0.6.0';
 const port = parseInt(process.env.CLAUDE_BRIDGE_PORT || '47615', 10);
@@ -53,10 +46,27 @@ const INSTRUCTIONS = [
 
 const editorOf = { word_: 'word', cell_: 'cell', slide_: 'slide' };
 
+// The MCP server and the tools (with the large API reference) are only loaded
+// when this process serves them itself, not when it just relays to a shared server.
+async function loadServerModules() {
+  const [{ McpServer }, { StdioServerTransport }, { Bridge }, common, reference, word, cell, slide] = await Promise.all([
+    import('@modelcontextprotocol/sdk/server/mcp.js'),
+    import('@modelcontextprotocol/sdk/server/stdio.js'),
+    import('./bridge.mjs'),
+    import('./tools/common.mjs'),
+    import('./tools/reference.mjs'),
+    import('./tools/word.mjs'),
+    import('./tools/cell.mjs'),
+    import('./tools/slide.mjs'),
+  ]);
+  const tools = [...common.commonTools, ...reference.referenceTools, ...word.wordTools, ...cell.cellTools, ...slide.slideTools];
+  return { McpServer, StdioServerTransport, Bridge, tools };
+}
+
 // A new MCP server with every tool, driving the given bridge.
-function makeServer(bridge) {
-  const server = new McpServer({ name: 'onlyoffice-claude-bridge', version: VERSION }, { instructions: INSTRUCTIONS });
-  for (const tool of [...commonTools, ...referenceTools, ...wordTools, ...cellTools, ...slideTools]) {
+function makeServer(mods, bridge) {
+  const server = new mods.McpServer({ name: 'onlyoffice-claude-bridge', version: VERSION }, { instructions: INSTRUCTIONS });
+  for (const tool of mods.tools) {
     const editor = Object.entries(editorOf).find(([p]) => tool.name.startsWith(p))?.[1];
     server.registerTool(
       tool.name,
@@ -88,9 +98,9 @@ function makeServer(bridge) {
   return server;
 }
 
-function startBridge() {
+function startBridge(mods) {
   const { token, file: tokenFile } = loadToken();
-  const bridge = new Bridge({
+  const bridge = new mods.Bridge({
     port,
     allowedOrigins,
     token,
@@ -107,15 +117,24 @@ function startBridge() {
 }
 
 if (httpMode) {
-  const { bridge } = startBridge();
+  const mods = await loadServerModules();
+  const { startHttpServer } = await import('./http.mjs');
+  const { bridge } = startBridge(mods);
   const { token } = loadToken('mcp-token');
-  await startHttpServer({ port: mcpPort, token, version: VERSION, makeServer: () => makeServer(bridge) });
+  await startHttpServer({
+    port: mcpPort,
+    token,
+    version: VERSION,
+    makeServer: () => makeServer(mods, bridge),
+    getStatus: () => bridge.status(),
+  });
   console.error(`[claude-bridge] shared server ${VERSION} ready`);
 } else if (process.env.CLAUDE_BRIDGE_STANDALONE !== '1' && await sharedServerUp(mcpPort)) {
   await runProxy({ port: mcpPort, token: loadToken('mcp-token').token });
 } else {
-  const { bridge, shutdown } = startBridge();
-  await makeServer(bridge).connect(new StdioServerTransport());
+  const mods = await loadServerModules();
+  const { bridge, shutdown } = startBridge(mods);
+  await makeServer(mods, bridge).connect(new mods.StdioServerTransport());
   console.error(`[claude-bridge] MCP server ${VERSION} ready`);
   process.stdin.on('close', shutdown);
 }
