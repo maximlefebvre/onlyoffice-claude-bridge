@@ -166,13 +166,15 @@ export async function runProxy({ port, token }) {
     return t;
   };
 
-  const connect = async () => {
+  // Opens a new MCP session on the shared server. With `replay`, re-sends the
+  // session's handshake (after a restart of the shared server).
+  const connect = async ({ replay = true } = {}) => {
     const old = upstream;
     upstream = null;
-    if (old) old.close().catch(() => {});
+    if (old) old.terminateSession().catch(() => {}).finally(() => old.close().catch(() => {}));
     const t = makeUpstream();
     await t.start();
-    if (initRequest) {
+    if (replay && initRequest) {
       // The session id is read from the response headers, before send() resolves.
       await t.send({ ...initRequest, id: REPLAY_ID });
       if (protocolVersion) t.setProtocolVersion(protocolVersion);
@@ -189,6 +191,16 @@ export async function runProxy({ port, token }) {
   const sessionLost = (err) => /Unknown MCP session|\b404\b|No MCP session/i.test(String(err?.message || err));
 
   const forward = async (msg) => {
+    if (msg?.method === 'initialize') {
+      // A client may initialize more than once over the same stdio (e.g. when it
+      // reconnects): each initialize gets a fresh session, since the shared
+      // server refuses a second one in the same session.
+      if (reconnecting) await reconnecting.catch(() => {});
+      reconnecting = connect({ replay: false }).finally(() => { reconnecting = null; });
+      await reconnecting;
+      await upstream.send(msg);
+      return;
+    }
     await ensureConnected();
     const t = upstream;
     try {

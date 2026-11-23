@@ -30430,14 +30430,15 @@ async function runProxy({ port: port2, token }) {
     t.onerror = (err) => log2("shared server:", err.message);
     return t;
   };
-  const connect = async () => {
+  const connect = async ({ replay = true } = {}) => {
     const old = upstream;
     upstream = null;
-    if (old) old.close().catch(() => {
-    });
+    if (old) old.terminateSession().catch(() => {
+    }).finally(() => old.close().catch(() => {
+    }));
     const t = makeUpstream();
     await t.start();
-    if (initRequest) {
+    if (replay && initRequest) {
       await t.send({ ...initRequest, id: REPLAY_ID });
       if (protocolVersion) t.setProtocolVersion(protocolVersion);
       if (initializedNote) await t.send(initializedNote);
@@ -30454,6 +30455,16 @@ async function runProxy({ port: port2, token }) {
   };
   const sessionLost = (err) => /Unknown MCP session|\b404\b|No MCP session/i.test(String(err?.message || err));
   const forward = async (msg) => {
+    if (msg?.method === "initialize") {
+      if (reconnecting) await reconnecting.catch(() => {
+      });
+      reconnecting = connect({ replay: false }).finally(() => {
+        reconnecting = null;
+      });
+      await reconnecting;
+      await upstream.send(msg);
+      return;
+    }
     await ensureConnected();
     const t = upstream;
     try {
