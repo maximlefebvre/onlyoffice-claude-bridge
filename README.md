@@ -29,6 +29,28 @@ claude plugin install onlyoffice-bridge@onlyoffice-bridge
 
 Each new Claude Code session then starts the server, which listens on `ws://127.0.0.1:47615`. Only one session at a time can use the port: the others keep retrying, and their tools report which process holds it (another Claude Bridge server, with its pid). When the session holding the port ends, the next one takes it over within a few seconds and the plugin reconnects to it.
 
+#### Shared server (recommended with several Claude sessions)
+
+To let every Claude session use the connected documents at the same time, run one shared server as a login service (macOS):
+
+```bash
+mcp-server/scripts/install-service.sh            # install and start (also: status, restart, uninstall)
+```
+
+The service runs `dist/server.mjs --http`, which:
+
+- owns the WebSocket on port 47615, so documents stay connected whichever Claude sessions are open;
+- serves MCP over Streamable HTTP on `http://127.0.0.1:47616/mcp` (`CLAUDE_BRIDGE_MCP_PORT`). It only answers to `127.0.0.1` / `localhost` host names, refuses browser requests (any `Origin` header), and requires the bearer token stored in `~/.config/onlyoffice-claude-bridge/mcp-token`.
+
+Nothing else to configure: a session started with the usual stdio command finds the shared server (`/health`) and relays its MCP messages to it instead of opening the port itself. Sessions already open keep their own server until they restart. Set `CLAUDE_BRIDGE_STANDALONE=1` to opt a session out. HTTP-capable clients can also connect directly:
+
+```bash
+claude mcp add --scope user --transport http onlyoffice http://127.0.0.1:47616/mcp \
+  --header "Authorization: Bearer $(cat ~/.config/onlyoffice-claude-bridge/mcp-token)"
+```
+
+The service points at the `dist/server.mjs` of the checkout the script was run from: run the script again after moving the checkout. Log: `~/Library/Logs/onlyoffice-claude-bridge.log`.
+
 When a document disconnects (plugin reload, network hiccup), tool calls wait a few seconds (`CLAUDE_BRIDGE_GRACE_MS`, default 6000) for it to come back before reporting that nothing is connected, and a reconnecting document keeps its id.
 
 #### Other MCP clients
@@ -46,7 +68,7 @@ Claude desktop app (Chat tab), in `claude_desktop_config.json`, or any MCP clien
 }
 ```
 
-Options (environment variables): `CLAUDE_BRIDGE_PORT`, `CLAUDE_BRIDGE_ALLOWED_ORIGINS` (default `https://maximlefebvre.github.io`), `CLAUDE_BRIDGE_TIMEOUT_MS`, `CLAUDE_BRIDGE_GRACE_MS`, `CLAUDE_BRIDGE_NO_DIALOG` (never show the approval dialog).
+Options (environment variables): `CLAUDE_BRIDGE_PORT`, `CLAUDE_BRIDGE_MCP_PORT` (shared server, default 47616), `CLAUDE_BRIDGE_STANDALONE`, `CLAUDE_BRIDGE_ALLOWED_ORIGINS` (default `https://maximlefebvre.github.io`; ONLYOFFICE Desktop Editors, which load installed plugins from local files, are always accepted), `CLAUDE_BRIDGE_TIMEOUT_MS`, `CLAUDE_BRIDGE_GRACE_MS`, `CLAUDE_BRIDGE_NO_DIALOG` (never show the approval dialog).
 
 ### 2. Install the editor plugin
 

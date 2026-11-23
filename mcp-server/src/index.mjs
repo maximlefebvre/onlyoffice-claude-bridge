@@ -1,13 +1,24 @@
 #!/usr/bin/env node
 // MCP server for OnlyOffice Claude Bridge.
 //
-// Claude talks to this server over stdio (MCP). The Claude Bridge plugin,
-// running inside an OnlyOffice editor, connects to it over a local WebSocket.
+// Claude talks to this server over MCP. The Claude Bridge plugin, running
+// inside an OnlyOffice editor, connects to it over a local WebSocket.
+//
+// Modes:
+//   (default)  stdio. If a shared server is running (see --http), this process
+//              only relays the session to it. Otherwise it owns the WebSocket
+//              itself, as one server per Claude session.
+//   --http     shared server: owns the WebSocket and serves MCP over HTTP on
+//              127.0.0.1 to every Claude session (bearer token required).
+//              Meant to run once, as a login service (scripts/install-service.sh).
 //
 // Environment variables:
 //   CLAUDE_BRIDGE_PORT             WebSocket port (default 47615)
+//   CLAUDE_BRIDGE_MCP_PORT         HTTP MCP port of the shared server (default 47616)
+//   CLAUDE_BRIDGE_STANDALONE       1 = never relay to a shared server
 //   CLAUDE_BRIDGE_ALLOWED_ORIGINS  comma-separated origins allowed to connect
-//                                  (default: https://maximlefebvre.github.io)
+//                                  (default: https://maximlefebvre.github.io;
+//                                  ONLYOFFICE Desktop Editors are always allowed)
 //   CLAUDE_BRIDGE_TIMEOUT_MS       editor call timeout (default 20000)
 //   CLAUDE_BRIDGE_GRACE_MS         how long a tool call waits for a document
 //                                  that just disconnected to come back (default 6000)
@@ -15,81 +26,96 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Bridge, loadToken } from './bridge.mjs';
+import { startHttpServer, sharedServerUp, runProxy } from './http.mjs';
 import { commonTools } from './tools/common.mjs';
 import { wordTools } from './tools/word.mjs';
 import { cellTools } from './tools/cell.mjs';
 import { slideTools } from './tools/slide.mjs';
 import { referenceTools } from './tools/reference.mjs';
 
-const VERSION = '0.5.0';
+const VERSION = '0.6.0';
 const port = parseInt(process.env.CLAUDE_BRIDGE_PORT || '47615', 10);
+const mcpPort = parseInt(process.env.CLAUDE_BRIDGE_MCP_PORT || '47616', 10);
+const httpMode = process.argv.includes('--http');
 const allowedOrigins = (process.env.CLAUDE_BRIDGE_ALLOWED_ORIGINS || 'https://maximlefebvre.github.io')
   .split(',').map((s) => s.trim()).filter(Boolean);
-const { token, file: tokenFile } = loadToken();
 
-const bridge = new Bridge({
-  port,
-  allowedOrigins,
-  token,
-  timeoutMs: parseInt(process.env.CLAUDE_BRIDGE_TIMEOUT_MS || '20000', 10),
-  graceMs: parseInt(process.env.CLAUDE_BRIDGE_GRACE_MS || '6000', 10),
-  version: VERSION,
-});
-bridge.start();
-console.error(`[claude-bridge] token file: ${tokenFile}`);
-
-const server = new McpServer(
-  { name: 'onlyoffice-claude-bridge', version: VERSION },
-  {
-    instructions: [
-      'These tools edit the documents the user has open in OnlyOffice (for example in kDrive), live, through the Claude Bridge plugin.',
-      'Start with list_documents to see what is connected. Tools prefixed word_ work on text documents, cell_ on spreadsheets, slide_ on presentations.',
-      'Read before editing (word_read_document, cell_read_range, slide_list) and use the indexes they return.',
-      'For anything the dedicated tools do not cover, look up the API with api_reference, then use run_script.',
-      'Edits are applied immediately in the user\'s document and can be undone with Ctrl/Cmd+Z in the editor. For substantial rewrites of a text document, consider word_set_track_changes so the user can review.',
-      'The plugin keeps each open document connected in the background. If no document is connected, ask the user to check that Claude Bridge is enabled under Plugins → Background plugins, then open its panel (Claude tab → Claude Bridge) and click Connect.',
-      'If a tool reports that the port is held by another Claude Bridge server, another Claude session owns the connection: tell the user to close that session (this one takes over automatically).',
-      'The first time a browser connects, the user approves it in a dialog on their computer. If list_connection_requests shows a pending request (no dialog available), ask the user and only call approve_connection with their explicit answer.',
-    ].join(' '),
-  },
-);
+const INSTRUCTIONS = [
+  'These tools edit the documents the user has open in OnlyOffice (for example in kDrive), live, through the Claude Bridge plugin.',
+  'Start with list_documents to see what is connected. Tools prefixed word_ work on text documents, cell_ on spreadsheets, slide_ on presentations.',
+  'Read before editing (word_read_document, cell_read_range, slide_list) and use the indexes they return.',
+  'For anything the dedicated tools do not cover, look up the API with api_reference, then use run_script.',
+  'Edits are applied immediately in the user\'s document and can be undone with Ctrl/Cmd+Z in the editor. For substantial rewrites of a text document, consider word_set_track_changes so the user can review.',
+  'The plugin keeps each open document connected in the background. If no document is connected, ask the user to check that Claude Bridge is enabled under Plugins → Background plugins, then open its panel (Claude tab → Claude Bridge) and click Connect.',
+  'If a tool reports that the port is held by another Claude Bridge server, another Claude session owns the connection: tell the user to close that session (this one takes over automatically), or to install the shared server (scripts/install-service.sh) so that every session shares it.',
+  'The first time a browser connects, the user approves it in a dialog on their computer. If list_connection_requests shows a pending request (no dialog available), ask the user and only call approve_connection with their explicit answer.',
+].join(' ');
 
 const editorOf = { word_: 'word', cell_: 'cell', slide_: 'slide' };
 
-for (const tool of [...commonTools, ...referenceTools, ...wordTools, ...cellTools, ...slideTools]) {
-  const editor = Object.entries(editorOf).find(([p]) => tool.name.startsWith(p))?.[1];
-  server.registerTool(
-    tool.name,
-    {
-      title: tool.title,
-      description: tool.description,
-      inputSchema: tool.schema,
-      annotations: {
+// A new MCP server with every tool, driving the given bridge.
+function makeServer(bridge) {
+  const server = new McpServer({ name: 'onlyoffice-claude-bridge', version: VERSION }, { instructions: INSTRUCTIONS });
+  for (const tool of [...commonTools, ...referenceTools, ...wordTools, ...cellTools, ...slideTools]) {
+    const editor = Object.entries(editorOf).find(([p]) => tool.name.startsWith(p))?.[1];
+    server.registerTool(
+      tool.name,
+      {
         title: tool.title,
-        readOnlyHint: !!tool.readOnly,
-        destructiveHint: !!tool.destructive,
-        openWorldHint: false,
+        description: tool.description,
+        inputSchema: tool.schema,
+        annotations: {
+          title: tool.title,
+          readOnlyHint: !!tool.readOnly,
+          destructiveHint: !!tool.destructive,
+          openWorldHint: false,
+        },
       },
-    },
-    async (args = {}) => {
-      try {
-        const client = tool.noDocument ? null : await bridge.resolve(args.document, editor);
-        const result = await tool.run(bridge, client, args);
-        const payload = client
-          ? { document: { id: client.id, title: client.title, editor: client.editor }, result }
-          : result;
-        return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
-      } catch (err) {
-        return { isError: true, content: [{ type: 'text', text: `Error: ${err.message}` }] };
-      }
-    },
-  );
+      async (args = {}) => {
+        try {
+          const client = tool.noDocument ? null : await bridge.resolve(args.document, editor);
+          const result = await tool.run(bridge, client, args);
+          const payload = client
+            ? { document: { id: client.id, title: client.title, editor: client.editor }, result }
+            : result;
+          return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
+        } catch (err) {
+          return { isError: true, content: [{ type: 'text', text: `Error: ${err.message}` }] };
+        }
+      },
+    );
+  }
+  return server;
 }
 
-await server.connect(new StdioServerTransport());
-console.error(`[claude-bridge] MCP server ${VERSION} ready`);
+function startBridge() {
+  const { token, file: tokenFile } = loadToken();
+  const bridge = new Bridge({
+    port,
+    allowedOrigins,
+    token,
+    timeoutMs: parseInt(process.env.CLAUDE_BRIDGE_TIMEOUT_MS || '20000', 10),
+    graceMs: parseInt(process.env.CLAUDE_BRIDGE_GRACE_MS || '6000', 10),
+    version: VERSION,
+  });
+  bridge.start();
+  console.error(`[claude-bridge] token file: ${tokenFile}`);
+  const shutdown = () => { try { bridge.wss?.close(); } catch {} process.exit(0); };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+  return { bridge, shutdown };
+}
 
-const shutdown = () => { try { bridge.wss?.close(); } catch {} process.exit(0); };
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
-process.stdin.on('close', shutdown);
+if (httpMode) {
+  const { bridge } = startBridge();
+  const { token } = loadToken('mcp-token');
+  await startHttpServer({ port: mcpPort, token, version: VERSION, makeServer: () => makeServer(bridge) });
+  console.error(`[claude-bridge] shared server ${VERSION} ready`);
+} else if (process.env.CLAUDE_BRIDGE_STANDALONE !== '1' && await sharedServerUp(mcpPort)) {
+  await runProxy({ port: mcpPort, token: loadToken('mcp-token').token });
+} else {
+  const { bridge, shutdown } = startBridge();
+  await makeServer(bridge).connect(new StdioServerTransport());
+  console.error(`[claude-bridge] MCP server ${VERSION} ready`);
+  process.stdin.on('close', shutdown);
+}

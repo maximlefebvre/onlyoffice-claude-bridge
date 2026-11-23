@@ -13,6 +13,18 @@ const log = (...args) => console.error('[claude-bridge]', ...args); // stdout is
 
 export const MIN_PLUGIN_VERSION = '0.2.0';
 
+// ONLYOFFICE Desktop Editors load locally installed plugins from files, so the
+// WebSocket handshake carries a non-web origin ("file://" or "null") instead of
+// the GitHub Pages one. Accept those only from the Desktop app's own browser
+// engine (its user agent contains "AscDesktopEditor"): a web page cannot change
+// the user agent of a WebSocket handshake, and a new browser still has to be
+// approved by the user before it gets a token.
+export function isDesktopEditor(origin, userAgent) {
+  if (!/AscDesktopEditor/i.test(userAgent || '')) return false;
+  const o = String(origin || 'null').toLowerCase();
+  return o === 'null' || o.startsWith('file:');
+}
+
 function isCompatible(version) {
   const parse = (v) => String(v || '0').split('.').map((n) => parseInt(n, 10) || 0);
   const [a, b] = [parse(version), parse(MIN_PLUGIN_VERSION)];
@@ -24,8 +36,11 @@ function isCompatible(version) {
 
 const CONFIG_DIR = join(homedir(), '.config', 'onlyoffice-claude-bridge');
 
-export function loadToken() {
-  const file = join(CONFIG_DIR, 'token');
+// Reads a secret from the config folder, creating it on first use.
+// "token": manual pairing token for the editor plugin.
+// "mcp-token": bearer token of the shared HTTP MCP endpoint.
+export function loadToken(name = 'token') {
+  const file = join(CONFIG_DIR, name);
   mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
   if (!existsSync(file)) writeFileSync(file, randomBytes(24).toString('base64url'), { mode: 0o600 });
   return { token: readFileSync(file, 'utf8').trim(), file };
@@ -167,9 +182,11 @@ export class Bridge {
     const wss = new WebSocketServer({
       host: this.host,
       port: this.port,
-      verifyClient: ({ origin }, done) => {
-        const ok = this.allowedOrigins.includes('*') || this.allowedOrigins.includes(origin);
-        if (!ok) log(`connection refused, origin not allowed: ${origin}`);
+      verifyClient: ({ origin, req }, done) => {
+        const ua = req.headers['user-agent'] || '';
+        const ok = this.allowedOrigins.includes('*') || this.allowedOrigins.includes(origin)
+          || isDesktopEditor(origin, ua);
+        if (!ok) log(`connection refused, origin not allowed: ${origin} (user agent: ${ua})`);
         done(ok, 403, 'Origin not allowed');
       },
     });
