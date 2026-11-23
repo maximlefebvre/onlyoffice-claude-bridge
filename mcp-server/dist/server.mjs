@@ -30405,40 +30405,88 @@ async function sharedServerUp(port2, timeoutMs = 800) {
   }
 }
 async function runProxy({ port: port2, token }) {
-  const upstream = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port2}/mcp`), {
-    requestInit: { headers: { Authorization: `Bearer ${token}` } }
-  });
+  const url2 = new URL(`http://127.0.0.1:${port2}/mcp`);
   const local = new StdioServerTransport();
-  const initIds = /* @__PURE__ */ new Set();
+  const REPLAY_ID = "__claude_bridge_reinitialize__";
+  let initRequest = null;
+  let initializedNote = null;
+  let protocolVersion = null;
+  let upstream = null;
+  let reconnecting = null;
   let closing = false;
-  const stop = (why) => {
+  const makeUpstream = () => {
+    const t = new StreamableHTTPClientTransport(url2, {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } }
+    });
+    t.onmessage = (msg) => {
+      if (msg?.id === REPLAY_ID) return;
+      if (initRequest && msg?.id === initRequest.id && msg.result?.protocolVersion) {
+        protocolVersion = msg.result.protocolVersion;
+        t.setProtocolVersion(protocolVersion);
+      }
+      local.send(msg).catch(() => {
+      });
+    };
+    t.onerror = (err) => log2("shared server:", err.message);
+    return t;
+  };
+  const connect = async () => {
+    const old = upstream;
+    upstream = null;
+    if (old) old.close().catch(() => {
+    });
+    const t = makeUpstream();
+    await t.start();
+    if (initRequest) {
+      await t.send({ ...initRequest, id: REPLAY_ID });
+      if (protocolVersion) t.setProtocolVersion(protocolVersion);
+      if (initializedNote) await t.send(initializedNote);
+      log2("reconnected to the shared server");
+    }
+    upstream = t;
+  };
+  const ensureConnected = () => {
+    if (upstream) return Promise.resolve();
+    reconnecting ||= connect().finally(() => {
+      reconnecting = null;
+    });
+    return reconnecting;
+  };
+  const sessionLost = (err) => /Unknown MCP session|\b404\b|No MCP session/i.test(String(err?.message || err));
+  const forward = async (msg) => {
+    await ensureConnected();
+    const t = upstream;
+    try {
+      await t.send(msg);
+    } catch (err) {
+      if (!initRequest || msg?.method === "initialize" || !sessionLost(err)) throw err;
+      log2("shared server lost this session (restarted?), reconnecting");
+      if (upstream === t) upstream = null;
+      await ensureConnected();
+      await upstream.send(msg);
+    }
+  };
+  const stop = () => {
     if (closing) return;
     closing = true;
-    if (why) log2(`proxy stopped: ${why}`);
-    upstream.terminateSession().catch(() => {
-    }).finally(() => Promise.allSettled([upstream.close(), local.close()])).finally(() => process.exit(0));
+    const t = upstream;
+    (t ? t.terminateSession().catch(() => {
+    }) : Promise.resolve()).finally(() => Promise.allSettled([t?.close(), local.close()])).finally(() => process.exit(0));
   };
   local.onmessage = (msg) => {
-    if (msg?.method === "initialize" && msg.id !== void 0) initIds.add(msg.id);
-    upstream.send(msg).catch((err) => {
+    if (msg?.method === "initialize") initRequest = msg;
+    else if (msg?.method === "notifications/initialized") initializedNote = msg;
+    forward(msg).catch((err) => {
+      if (sessionLost(err) || /fetch failed|ECONNREFUSED/i.test(String(err?.message))) upstream = null;
       if (msg?.id !== void 0 && msg.method) {
         local.send({ jsonrpc: "2.0", id: msg.id, error: { code: -32e3, message: `Shared OnlyOffice server unreachable: ${err.message}` } }).catch(() => {
         });
       }
     });
   };
-  upstream.onmessage = (msg) => {
-    if (msg?.id !== void 0 && initIds.delete(msg.id) && msg.result?.protocolVersion) {
-      upstream.setProtocolVersion(msg.result.protocolVersion);
-    }
-    local.send(msg).catch(() => {
-    });
-  };
-  upstream.onerror = (err) => log2("shared server:", err.message);
-  upstream.onclose = () => stop("shared server closed the connection");
   local.onclose = () => stop();
   process.stdin.on("close", () => stop());
-  await upstream.start();
+  await connect();
   await local.start();
   log2(`relaying this session to the shared server on port ${port2}`);
 }

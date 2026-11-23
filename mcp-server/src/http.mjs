@@ -134,47 +134,99 @@ export async function sharedServerUp(port, timeoutMs = 800) {
 }
 
 // Relays MCP messages between this process's stdio (the Claude session) and
-// the shared server, without interpreting them.
+// the shared server, without interpreting them. When the shared server
+// restarts (its MCP sessions are lost), the relay opens a new session by
+// replaying the session's initialize handshake, then resends the message, so
+// the Claude session does not notice.
 export async function runProxy({ port, token }) {
-  const upstream = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
-    requestInit: { headers: { Authorization: `Bearer ${token}` } },
-  });
+  const url = new URL(`http://127.0.0.1:${port}/mcp`);
   const local = new StdioServerTransport();
-  const initIds = new Set();
+  const REPLAY_ID = '__claude_bridge_reinitialize__';
+  let initRequest = null;  // the session's initialize request
+  let initializedNote = null; // and its "initialized" notification
+  let protocolVersion = null;
+  let upstream = null;
+  let reconnecting = null;
   let closing = false;
 
-  const stop = (why) => {
+  const makeUpstream = () => {
+    const t = new StreamableHTTPClientTransport(url, {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    t.onmessage = (msg) => {
+      if (msg?.id === REPLAY_ID) return; // answer to a replayed handshake: the session already has one
+      // Later requests must carry the negotiated protocol version.
+      if (initRequest && msg?.id === initRequest.id && msg.result?.protocolVersion) {
+        protocolVersion = msg.result.protocolVersion;
+        t.setProtocolVersion(protocolVersion);
+      }
+      local.send(msg).catch(() => {});
+    };
+    t.onerror = (err) => log('shared server:', err.message);
+    return t;
+  };
+
+  const connect = async () => {
+    const old = upstream;
+    upstream = null;
+    if (old) old.close().catch(() => {});
+    const t = makeUpstream();
+    await t.start();
+    if (initRequest) {
+      // The session id is read from the response headers, before send() resolves.
+      await t.send({ ...initRequest, id: REPLAY_ID });
+      if (protocolVersion) t.setProtocolVersion(protocolVersion);
+      if (initializedNote) await t.send(initializedNote);
+      log('reconnected to the shared server');
+    }
+    upstream = t;
+  };
+  const ensureConnected = () => {
+    if (upstream) return Promise.resolve();
+    reconnecting ||= connect().finally(() => { reconnecting = null; });
+    return reconnecting;
+  };
+  const sessionLost = (err) => /Unknown MCP session|\b404\b|No MCP session/i.test(String(err?.message || err));
+
+  const forward = async (msg) => {
+    await ensureConnected();
+    const t = upstream;
+    try {
+      await t.send(msg);
+    } catch (err) {
+      if (!initRequest || msg?.method === 'initialize' || !sessionLost(err)) throw err;
+      log('shared server lost this session (restarted?), reconnecting');
+      if (upstream === t) upstream = null;
+      await ensureConnected();
+      await upstream.send(msg);
+    }
+  };
+
+  const stop = () => {
     if (closing) return;
     closing = true;
-    if (why) log(`proxy stopped: ${why}`);
+    const t = upstream;
     // Ends the MCP session on the shared server (DELETE), then closes both sides.
-    upstream.terminateSession().catch(() => {})
-      .finally(() => Promise.allSettled([upstream.close(), local.close()]))
+    (t ? t.terminateSession().catch(() => {}) : Promise.resolve())
+      .finally(() => Promise.allSettled([t?.close(), local.close()]))
       .finally(() => process.exit(0));
   };
 
   local.onmessage = (msg) => {
-    if (msg?.method === 'initialize' && msg.id !== undefined) initIds.add(msg.id);
-    upstream.send(msg).catch((err) => {
+    if (msg?.method === 'initialize') initRequest = msg;
+    else if (msg?.method === 'notifications/initialized') initializedNote = msg;
+    forward(msg).catch((err) => {
+      if (sessionLost(err) || /fetch failed|ECONNREFUSED/i.test(String(err?.message))) upstream = null; // retry on the next message
       // Answer the request ourselves so the session does not hang.
       if (msg?.id !== undefined && msg.method) {
         local.send({ jsonrpc: '2.0', id: msg.id, error: { code: -32000, message: `Shared OnlyOffice server unreachable: ${err.message}` } }).catch(() => {});
       }
     });
   };
-  upstream.onmessage = (msg) => {
-    // Later requests must carry the negotiated protocol version.
-    if (msg?.id !== undefined && initIds.delete(msg.id) && msg.result?.protocolVersion) {
-      upstream.setProtocolVersion(msg.result.protocolVersion);
-    }
-    local.send(msg).catch(() => {});
-  };
-  upstream.onerror = (err) => log('shared server:', err.message);
-  upstream.onclose = () => stop('shared server closed the connection');
   local.onclose = () => stop();
   process.stdin.on('close', () => stop());
 
-  await upstream.start();
+  await connect();
   await local.start();
   log(`relaying this session to the shared server on port ${port}`);
 }
