@@ -36,7 +36,7 @@ To let every Claude session use the connected documents at the same time, run on
 - **Menu bar app**, started and stopped by hand. It bundles the server, shows the connected documents, the Claude sessions and whether the plugin port is free, and opens the log. Launching the app starts the server, quitting it stops it; **Open at Login** is optional. Build it with the Xcode command line tools (no Xcode project):
 
   ```bash
-  macos-app/build.sh install    # builds and copies "Claude Bridge.app" to ~/Applications
+  macos-app/build.sh install    # builds and copies "Claude-Bridge-for-OnlyOffice.app" to ~/Applications
   ```
 
   The app carries its own copy of `dist/server.mjs`: rebuild it after updating the server.
